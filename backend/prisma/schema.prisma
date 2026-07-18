@@ -1,0 +1,147 @@
+// ──────────────────────────────────────────────────────────────
+// Gula PMS — Prisma Schema
+// Complete database schema for all modules:
+//   Pharmacy, User, Supplier, Medicine, Sale, SaleItem
+// ──────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Pharmacy ────────────────────────────────────────────────
+// Each pharmacy is the top-level tenant. All data is scoped
+// to a pharmacy via pharmacyId foreign keys.
+// ─────────────────────────────────────────────────────────────
+model Pharmacy {
+  id        String   @id @default(uuid())
+  name      String
+  location  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users      User[]
+  suppliers  Supplier[]
+  medicines  Medicine[]
+  sales      Sale[]
+}
+
+// ─── User ────────────────────────────────────────────────────
+// Pharmacy staff. The first user created during registration
+// is automatically assigned the ADMIN role.
+// ─────────────────────────────────────────────────────────────
+model User {
+  id         String   @id @default(uuid())
+  username   String
+  email      String   @unique
+  password   String   // bcrypt-hashed
+  role       String   @default("ADMIN") // ADMIN | PHARMACIST
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  sales      Sale[]
+
+  @@index([pharmacyId])
+  @@index([email])
+}
+
+// ─── Supplier ────────────────────────────────────────────────
+// Companies that supply medicines to the pharmacy.
+// ─────────────────────────────────────────────────────────────
+model Supplier {
+  id            String   @id @default(uuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  pharmacyId String
+  pharmacy   Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  medicines  Medicine[]
+
+  @@index([pharmacyId])
+}
+
+// ─── Medicine ────────────────────────────────────────────────
+// Inventory item. Each medicine belongs to a pharmacy and
+// optionally links to a supplier. Barcode is globally unique.
+// ─────────────────────────────────────────────────────────────
+model Medicine {
+  id           String    @id @default(uuid())
+  tradeName    String
+  genericName  String?
+  category     String?
+  barcode      String?   @unique
+  costPrice    Float     @default(0)
+  sellingPrice Float     @default(0)
+  stock        Int       @default(0)
+  expiryDate   DateTime?
+  image        String?   // File path to uploaded image
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  pharmacyId String
+  pharmacy   Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  supplierId String?
+  supplier   Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  saleItems  SaleItem[]
+
+  @@index([pharmacyId])
+  @@index([barcode])
+  @@index([supplierId])
+}
+
+// ─── Sale ────────────────────────────────────────────────────
+// A completed checkout transaction. Contains one or more
+// SaleItems and records which user processed the sale.
+// ─────────────────────────────────────────────────────────────
+model Sale {
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique @default(uuid())
+  totalAmount   Float
+  paymentMethod String   @default("CASH") // CASH | CARD | MOBILE
+  createdAt     DateTime @default(now())
+
+  // Relations
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  items      SaleItem[]
+
+  @@index([pharmacyId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ─── SaleItem ────────────────────────────────────────────────
+// Line item within a sale. Captures quantity and unit price
+// at the time of sale (snapshot, not a live reference).
+// ─────────────────────────────────────────────────────────────
+model SaleItem {
+  id        String @id @default(uuid())
+  quantity  Int
+  unitPrice Float
+
+  // Relations
+  saleId     String
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  medicineId String
+  medicine   Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([medicineId])
+}

@@ -1,0 +1,96 @@
+// ──────────────────────────────────────────────────────────────
+// Gula PMS — API Client
+// Centralized fetch wrapper with auth token injection,
+// error handling, and base URL configuration.
+// ──────────────────────────────────────────────────────────────
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+
+/**
+ * Generic fetch wrapper for the Gula API.
+ * Automatically injects the JWT token from localStorage.
+ *
+ * @param {string} endpoint — API path (e.g., "/auth/login")
+ * @param {object} options — Fetch options override
+ * @returns {Promise<object>} — Parsed JSON response
+ */
+export async function apiClient(endpoint, options = {}) {
+  const url = `${API_BASE_URL}${endpoint}`;
+
+  // Retrieve token from localStorage (client-side only)
+  let token = null;
+  if (typeof window !== "undefined") {
+    token = localStorage.getItem("gula_token");
+  }
+
+  // Build headers
+  const headers = {
+    ...(options.headers || {}),
+  };
+
+  // Only set Content-Type for non-FormData requests
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  // Inject auth token if available
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  // Parse JSON response
+  const data = await response.json();
+
+  // Handle non-OK responses
+  if (!response.ok) {
+    // If token is expired/invalid, clear it and redirect to login
+    if (response.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem("gula_token");
+      localStorage.removeItem("gula_user");
+      localStorage.removeItem("gula_pharmacy");
+
+      // Only redirect if not already on auth pages
+      if (
+        !window.location.pathname.includes("/login") &&
+        !window.location.pathname.includes("/register")
+      ) {
+        window.location.href = "/login";
+      }
+    }
+
+    throw new Error(data.message || "An unexpected error occurred.");
+  }
+
+  return data;
+}
+
+// ─── Convenience Methods ─────────────────────────────────────
+
+export const api = {
+  get: (endpoint) => apiClient(endpoint, { method: "GET" }),
+
+  post: (endpoint, body) =>
+    apiClient(endpoint, {
+      method: "POST",
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+
+  put: (endpoint, body) =>
+    apiClient(endpoint, {
+      method: "PUT",
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+
+  patch: (endpoint, body) =>
+    apiClient(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  delete: (endpoint) => apiClient(endpoint, { method: "DELETE" }),
+};
