@@ -258,6 +258,34 @@ const getCategories = async (req, res) => {
   }
 };
 
+// ─── GET /api/medicines/dictionary/search ──────────────────────
+// Search the global dictionary (all medicines, specifically OpenFDA seeded data) 
+// for generic names, irrespective of the current user's pharmacyId.
+// ──────────────────────────────────────────────────────────────
+const searchGlobalDictionary = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.length < 2) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Use raw query for guaranteed case-insensitive search in SQLite
+    // since Prisma's `contains` is case-sensitive for SQLite and mode: 'insensitive' is not supported.
+    const searchPattern = `%${q}%`;
+    const results = await prisma.$queryRaw`
+      SELECT id, genericName, tradeName, category, barcode 
+      FROM Medicine 
+      WHERE LOWER(genericName) LIKE LOWER(${searchPattern})
+      LIMIT 10
+    `;
+
+    return res.status(200).json({ success: true, data: results });
+  } catch (error) {
+    console.error("[Medicine] Global Dictionary Search error:", error);
+    return res.status(500).json({ success: false, message: "Failed to search dictionary." });
+  }
+};
+
 module.exports = {
   getMedicines,
   getMedicineById,
@@ -266,4 +294,5 @@ module.exports = {
   updateMedicine,
   deleteMedicine,
   getCategories,
+  searchGlobalDictionary,
 };

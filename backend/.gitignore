@@ -5,3 +5,4 @@ prisma/dev.db-journal
 uploads/*
 !uploads/.gitkeep
 .env
+data/

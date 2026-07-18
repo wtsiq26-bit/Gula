@@ -246,8 +246,8 @@ const generateInvoice = async (req, res) => {
     for (const item of sale.items) {
       const name = item.medicine.tradeName.substring(0, 20).padEnd(20);
       const qty = String(item.quantity).padStart(3);
-      const price = item.unitPrice.toFixed(2).padStart(8);
-      const total = (item.quantity * item.unitPrice).toFixed(2).padStart(8);
+      const price = item.unitPrice.toString().padStart(8);
+      const total = (item.quantity * item.unitPrice).toString().padStart(8);
       doc.text(`${name} ${qty} ${price} ${total}`);
     }
 
@@ -257,7 +257,7 @@ const generateInvoice = async (req, res) => {
 
     // ── Total ───────────────────────────────────────────────
     doc.font("Helvetica-Bold").fontSize(10);
-    doc.text(`TOTAL: ${sale.totalAmount.toFixed(2)}`, { align: "right" });
+    doc.text(`TOTAL: ${sale.totalAmount} IQD`, { align: "right" });
     doc.moveDown(0.5);
 
     // ── Footer ──────────────────────────────────────────────

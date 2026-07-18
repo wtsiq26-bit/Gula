@@ -14,11 +14,13 @@ const {
   updateMedicine,
   deleteMedicine,
   getCategories,
+  searchGlobalDictionary,
 } = require("../controllers/medicineController");
 
 // All routes require authentication
 router.use(protect);
 
+router.get("/dictionary/search", searchGlobalDictionary);
 router.get("/", getMedicines);
 router.get("/categories/list", getCategories);
 router.get("/barcode/:barcode", getMedicineByBarcode);
