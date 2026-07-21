@@ -14,7 +14,7 @@ import {
   BuildingStore,
   RefreshCw
 } from "lucide-react";
-import html2canvas from "html2canvas";
+import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
 
 export default function ReportsPage() {
@@ -60,74 +60,19 @@ export default function ReportsPage() {
     setExporting(true);
     const toastId = toast.loading("جاري جلب إعدادات التقرير وإنشاء ملف PDF...");
 
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-    const isLabWarning = (msg: any) => typeof msg === "string" && (msg.includes('unsupported color function') || msg.includes('lab('));
-
-    console.error = (...args: any[]) => {
-      if (isLabWarning(args[0])) return;
-      originalConsoleError.apply(console, args);
-    };
-    console.warn = (...args: any[]) => {
-      if (isLabWarning(args[0])) return;
-      originalConsoleWarn.apply(console, args);
-    };
-
     try {
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
-        useCORS: true,
+      const dataUrl = await toPng(reportRef.current, {
         backgroundColor: "#ffffff",
-        onclone: (clonedDoc) => {
-          const win = clonedDoc.defaultView || window;
-          const origGetComputedStyle = win.getComputedStyle;
-
-          win.getComputedStyle = function (el: Element, pseudoElt?: string | null) {
-            const style = origGetComputedStyle.call(win, el, pseudoElt);
-            return new Proxy(style, {
-              get(target, prop, receiver) {
-                const val = Reflect.get(target, prop, receiver);
-                if (typeof val === "string" && (val.includes("lab(") || val.includes("oklch("))) {
-                  return val
-                    .replace(/lab\([^)]+\)/gi, "rgb(16, 185, 129)")
-                    .replace(/oklch\([^)]+\)/gi, "rgb(16, 185, 129)");
-                }
-                return val;
-              },
-            });
-          };
-
-          const styles = clonedDoc.querySelectorAll("style, link[rel='stylesheet']");
-          styles.forEach((el) => {
-            if (el.textContent) {
-              el.textContent = el.textContent
-                .replace(/lab\([^)]+\)/gi, "#10b981")
-                .replace(/oklch\([^)]+\)/gi, "#10b981")
-                .replace(/color\(srgb[^)]+\)/gi, "#10b981");
-            }
-          });
-
-          clonedDoc.querySelectorAll("*").forEach((node: any) => {
-            if (node.style && node.style.cssText) {
-              node.style.cssText = node.style.cssText
-                .replace(/lab\([^)]+\)/gi, "#10b981")
-                .replace(/oklch\([^)]+\)/gi, "#10b981");
-            }
-          });
-        },
+        cacheBust: true,
+        quality: 0.95,
       });
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgProps = pdf.getImageProperties(dataUrl);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
       pdf.save("Gula_Report.pdf");
 
       toast.success("تم تصدير التقرير بنجاح!", { id: toastId });
@@ -135,8 +80,6 @@ export default function ReportsPage() {
       console.error("PDF Export Error:", err);
       toast.error("فشل تصدير التقرير إلى PDF", { id: toastId });
     } finally {
-      console.error = originalConsoleError;
-      console.warn = originalConsoleWarn;
       setExporting(false);
     }
   };
