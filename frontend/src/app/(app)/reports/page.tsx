@@ -14,12 +14,10 @@ import {
   BuildingStore,
   RefreshCw
 } from "lucide-react";
-import { toPng } from "html-to-image";
-import jsPDF from "jspdf";
+import { useReactToPrint } from "react-to-print";
 
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
   const [data, setData] = useState<any>({
     todaySales: 0,
     todayProfit: 0,
@@ -28,7 +26,12 @@ export default function ReportsPage() {
     recentSales: [],
   });
 
-  const reportRef = useRef<HTMLDivElement>(null);
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: "Gula_Report",
+  });
 
   const fetchReports = async () => {
     setLoading(true);
@@ -54,35 +57,6 @@ export default function ReportsPage() {
   useEffect(() => {
     fetchReports();
   }, []);
-
-  const handleExportPDF = async () => {
-    if (!reportRef.current) return;
-    setExporting(true);
-    const toastId = toast.loading("جاري جلب إعدادات التقرير وإنشاء ملف PDF...");
-
-    try {
-      const dataUrl = await toPng(reportRef.current, {
-        backgroundColor: "#ffffff",
-        cacheBust: true,
-        quality: 0.95,
-      });
-
-      const pdf = new jsPDF("p", "mm", "a4");
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save("Gula_Report.pdf");
-
-      toast.success("تم تصدير التقرير بنجاح!", { id: toastId });
-    } catch (err: any) {
-      console.error("PDF Export Error:", err);
-      toast.error("فشل تصدير التقرير إلى PDF", { id: toastId });
-    } finally {
-      setExporting(false);
-    }
-  };
 
   return (
     <div className="space-y-6 animate-fade-in" dir="rtl">
@@ -110,18 +84,18 @@ export default function ReportsPage() {
           </button>
 
           <button
-            onClick={handleExportPDF}
-            disabled={exporting || loading}
+            onClick={() => handlePrint()}
+            disabled={loading}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-md transition-all disabled:opacity-50"
           >
             <FileDown className="w-5 h-5" />
-            {exporting ? "جاري التصدير..." : "تصدير التقرير (PDF)"}
+            تصدير التقرير (PDF)
           </button>
         </div>
       </div>
 
-      {/* ─── Report Container (Captured for PDF Export) ─── */}
-      <div ref={reportRef} className="space-y-6 bg-slate-50 dark:bg-slate-950 p-2 rounded-xl">
+      {/* ─── Dashboard Content (Screen) ─── */}
+      <div className="space-y-6 bg-slate-50 dark:bg-slate-950 p-2 rounded-xl">
         
         {/* Metric Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -268,6 +242,102 @@ export default function ReportsPage() {
 
       </div>
 
-    </div>
+      {/* ─── Visually Hidden Formal A4 Report for react-to-print ─── */}
+      <div className="hidden">
+        <div 
+          ref={printRef} 
+          className="p-8 bg-white text-slate-900 font-sans text-right text-sm w-[210mm] min-h-[297mm] mx-auto box-border" 
+          dir="rtl"
+        >
+          
+          {/* Official Document Header */}
+          <div className="flex items-center justify-between border-b-2 border-emerald-600 pb-4 mb-6">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 mb-1">تقرير مبيعات وأرباح صيدلية Gula</h1>
+              <p className="text-xs text-slate-500">تقرير مالي رسمي معتمد لإدارة الصيدلية وقسم المحاسبة</p>
+            </div>
+            <div className="text-left font-mono text-xs text-slate-600">
+              <div>تاريخ التقرير: {new Date().toLocaleDateString("ar-IQ")}</div>
+              <div>الوقت: {new Date().toLocaleTimeString("ar-IQ")}</div>
+              <div className="font-bold text-emerald-700 mt-1">Gula PMS v1.0</div>
+            </div>
+          </div>
+
+          {/* Financial Summary Table */}
+          <div className="mb-6">
+            <h2 className="text-base font-bold text-slate-900 mb-3 border-r-4 border-emerald-600 pr-2">
+              الملخص المالي الرئيسي (بالدينار العراقي)
+            </h2>
+            <table className="w-full text-xs border-collapse border border-slate-300">
+              <thead>
+                <tr className="bg-slate-100 font-bold text-slate-700 text-center">
+                  <th className="border border-slate-300 p-2.5">مبيعات اليوم</th>
+                  <th className="border border-slate-300 p-2.5 text-emerald-700">أرباح اليوم (صافي)</th>
+                  <th className="border border-slate-300 p-2.5">مبيعات الشهر الحالي</th>
+                  <th className="border border-slate-300 p-2.5 text-indigo-700">أرباح الشهر (صافي)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="text-center font-mono font-bold text-sm">
+                  <td className="border border-slate-300 p-3">{formatCurrency(data.todaySales)}</td>
+                  <td className="border border-slate-300 p-3 text-emerald-600 bg-emerald-50/50">{formatCurrency(data.todayProfit)}</td>
+                  <td className="border border-slate-300 p-3">{formatCurrency(data.monthSales)}</td>
+                  <td className="border border-slate-300 p-3 text-indigo-600 bg-indigo-50/50">{formatCurrency(data.monthProfit)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Transactions Table */}
+          <div>
+            <h2 className="text-base font-bold text-slate-900 mb-3 border-r-4 border-emerald-600 pr-2">
+              جدول أحدث العمليات والمبيعات المسجلة
+            </h2>
+            <table className="w-full text-xs border-collapse border border-slate-300">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                  <th className="border border-slate-300 p-2 text-right">رقم الفاتورة</th>
+                  <th className="border border-slate-300 p-2 text-right">التاريخ والوقت</th>
+                  <th className="border border-slate-300 p-2 text-right">الكاشير</th>
+                  <th className="border border-slate-300 p-2 text-center">طريقة الدفع</th>
+                  <th className="border border-slate-300 p-2 text-left">المبلغ الإجمالي</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {data.recentSales && data.recentSales.length > 0 ? (
+                  data.recentSales.map((sale: any, idx: number) => (
+                    <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                      <td className="border border-slate-300 p-2 font-mono font-bold">{sale.invoiceNumber || sale.invoiceNo || sale.id}</td>
+                      <td className="border border-slate-300 p-2">{new Date(sale.createdAt).toLocaleString("ar-IQ")}</td>
+                      <td className="border border-slate-300 p-2 font-semibold">{sale.user?.username || "مدير النظام"}</td>
+                      <td className="border border-slate-300 p-2 text-center font-bold">{sale.paymentMethod === "CASH" ? "نقداً" : sale.paymentMethod}</td>
+                      <td className="border border-slate-300 p-2 text-left font-mono font-bold" dir="ltr">{formatCurrency(sale.totalAmount)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="border border-slate-300 p-4 text-center text-slate-500">
+                      لا توجد عمليات مبيعات مسجلة لهذا الشهر.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Official Document Footer */}
+          <div className="mt-12 pt-6 border-t border-slate-300 flex justify-between text-xs text-slate-600">
+            <div>
+              <div className="font-bold mb-1">توقيع المسؤول / الصيدلاني:</div>
+              <div className="w-48 border-b border-dashed border-slate-400 mt-6"></div>
+            </div>
+            <div className="text-left font-mono">
+              <div>صفحة 1 من 1</div>
+              <div className="text-[10px] text-slate-400 mt-1">تم الإنشاء بواسطة نظام Gula PMS</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
   );
 }
