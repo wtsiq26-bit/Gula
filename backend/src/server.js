@@ -16,6 +16,7 @@ const medicineRoutes = require("./routes/medicineRoutes");
 const saleRoutes = require("./routes/saleRoutes");
 const supplierRoutes = require("./routes/supplierRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 
 // ─── Initialize Express ──────────────────────────────────────
 const app = express();
@@ -54,6 +55,7 @@ app.use("/api/medicines", medicineRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/reports", reportRoutes);
 
 // ─── Health Check ────────────────────────────────────────────
 app.get("/api/health", (req, res) => {

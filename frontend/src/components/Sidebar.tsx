@@ -13,7 +13,8 @@ import {
   ChevronLeft, 
   Sun, 
   Moon,
-  FileSpreadsheet
+  FileSpreadsheet,
+  TrendingUp
 } from "lucide-react";
 
 export default function Sidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boolean, setIsCollapsed: (val: boolean) => void }) {
@@ -30,6 +31,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: 
     { name: "لوحة التحكم", href: "/dashboard", icon: LayoutDashboard },
     { name: "نقطة البيع", href: "/pos", icon: MonitorCheck },
     { name: "المخزون", href: "/inventory", icon: PackageSearch },
+    { name: "التقارير المالية", href: "/reports", icon: TrendingUp },
     { name: "استيراد الأدوية (Excel)", href: "/inventory/import", icon: FileSpreadsheet },
     { name: "الموردين", href: "/suppliers", icon: Users },
   ];
