@@ -63,11 +63,16 @@ export default function ReportsPage() {
     const toastId = toast.loading("جاري جلب إعدادات التقرير وإنشاء ملف PDF...");
 
     const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    const isLabWarning = (msg: any) => typeof msg === "string" && (msg.includes('unsupported color function') || msg.includes('lab('));
+
     console.error = (...args: any[]) => {
-      if (typeof args[0] === "string" && args[0].includes('unsupported color function "lab"')) {
-        return;
-      }
+      if (isLabWarning(args[0])) return;
       originalConsoleError.apply(console, args);
+    };
+    console.warn = (...args: any[]) => {
+      if (isLabWarning(args[0])) return;
+      originalConsoleWarn.apply(console, args);
     };
 
     try {
@@ -83,6 +88,14 @@ export default function ReportsPage() {
                 .replace(/lab\([^)]+\)/gi, "#10b981")
                 .replace(/oklch\([^)]+\)/gi, "#10b981")
                 .replace(/color\(srgb[^)]+\)/gi, "#10b981");
+            }
+          });
+
+          clonedDoc.querySelectorAll("*").forEach((node: any) => {
+            if (node.style && node.style.cssText) {
+              node.style.cssText = node.style.cssText
+                .replace(/lab\([^)]+\)/gi, "#10b981")
+                .replace(/oklch\([^)]+\)/gi, "#10b981");
             }
           });
         },
@@ -107,6 +120,7 @@ export default function ReportsPage() {
       toast.error("فشل تصدير التقرير إلى PDF", { id: toastId });
     } finally {
       console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
       setExporting(false);
     }
   };
