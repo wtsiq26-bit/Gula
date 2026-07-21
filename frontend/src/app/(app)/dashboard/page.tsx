@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import { api } from "@/lib/api";
+import Link from "next/link";
+
 import { 
   DollarSign, 
   Calendar, 
@@ -11,22 +14,33 @@ import {
   Clock, 
   XCircle,
   TrendingUp,
-  Receipt
+  Receipt,
+  ShieldAlert,
+  CheckCircle2,
+  ArrowLeft
 } from "lucide-react";
 import { formatCurrency } from "@/lib/formatCurrency";
 
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
+  const [expiryAlerts, setExpiryAlerts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchStats();
+    fetchDashboardData();
   }, []);
 
-  const fetchStats = async () => {
+  const fetchDashboardData = async () => {
     try {
-      const res = await api.get("/dashboard/stats");
-      setStats(res.data);
+      const [statsRes, alertsRes] = await Promise.all([
+        api.get("/dashboard/stats"),
+        api.get("/alerts/expiry").catch(() => null),
+      ]);
+      setStats(statsRes.data);
+      if (alertsRes) {
+        setExpiryAlerts(alertsRes.data || alertsRes);
+      }
     } catch (err) {
       console.error("Dashboard fetch error:", err);
     } finally {
@@ -43,6 +57,11 @@ export default function DashboardPage() {
   }
 
   const { overview, sales, recentSales } = stats || {};
+
+  // Extract Expired and Critical (Within 90 days) batches
+  const expiredBatches = expiryAlerts?.expired || [];
+  const critical90Batches = expiryAlerts?.within90Days || [];
+  const criticalItems = [...expiredBatches, ...critical90Batches].slice(0, 6);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -97,16 +116,107 @@ export default function DashboardPage() {
         />
         <AlertCard
           title="يشارف على الانتهاء"
-          count={overview?.expiringSoonCount || 0}
+          count={expiryAlerts?.summary?.within90DaysCount ?? overview?.expiringSoonCount ?? 0}
           color="rose"
           icon={<Clock className="w-5 h-5" />}
         />
         <AlertCard
           title="منتهي الصلاحية"
-          count={overview?.expiredCount || 0}
+          count={expiryAlerts?.summary?.expiredCount ?? overview?.expiredCount ?? 0}
           color="red"
           icon={<XCircle className="w-5 h-5" />}
         />
+      </div>
+
+      {/* ── Critical Expiry Alerts Widget Section ──────────────── */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-rose-600" />
+            <div>
+              <h2 className="font-bold text-slate-900 dark:text-white">
+                تنبيهات الصلاحية الحرجة
+              </h2>
+              <p className="text-xs text-slate-500">الشحنات المنتهية أو الحرجة (أقل من 90 يوماً)</p>
+            </div>
+          </div>
+          <Link
+            href="/alerts"
+            className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+          >
+            عرض كافة التنبيهات <ArrowLeft className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {criticalItems.length === 0 ? (
+          <div className="p-8 text-center flex flex-col items-center justify-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-emerald-700 dark:text-emerald-400">
+                جميع الأدوية في حالة سليمة
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">
+                لا توجد أية شحنات منتهية أو على وشك الانتهاء خلال الـ 90 يوماً القادمة.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-start">
+              <thead className="text-xs uppercase text-slate-500 bg-slate-50 dark:bg-slate-900/50">
+                <tr>
+                  <th className="px-6 py-3.5 font-semibold text-start">اسم الدواء</th>
+                  <th className="px-6 py-3.5 font-semibold text-start">الباركود</th>
+                  <th className="px-6 py-3.5 font-semibold text-center">الكمية</th>
+                  <th className="px-6 py-3.5 font-semibold text-start">تاريخ الانتهاء</th>
+                  <th className="px-6 py-3.5 font-semibold text-center">الحالة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50">
+                {criticalItems.map((batch: any) => {
+                  const expDate = new Date(batch.expiryDate);
+                  const isExpired = expDate < new Date();
+                  const daysLeft = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+                  return (
+                    <tr key={batch.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                      <td className="px-6 py-3.5 font-medium text-slate-900 dark:text-white text-start">
+                        {batch.medicine?.tradeName || "دواء غير مسمى"}
+                        {batch.medicine?.genericName && (
+                          <span className="block text-xs text-slate-400 font-normal">
+                            {batch.medicine.genericName}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3.5 font-mono text-slate-500 text-start text-xs">
+                        {batch.medicine?.barcode || "—"}
+                      </td>
+                      <td className="px-6 py-3.5 font-mono font-bold text-center">
+                        {batch.quantity}
+                      </td>
+                      <td className="px-6 py-3.5 font-mono text-slate-600 dark:text-slate-300 text-start text-xs" dir="ltr">
+                        {expDate.toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-3.5 text-center">
+                        {isExpired ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                            منتهي الصلاحية
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            ينتهي خلال {daysLeft} يوم
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ── Recent Sales Table ────────────────────────────────── */}
@@ -159,6 +269,7 @@ export default function DashboardPage() {
     </div>
   );
 }
+
 
 // ─── Subcomponents ──────────────────────────────────────────
 

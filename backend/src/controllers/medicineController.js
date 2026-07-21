@@ -376,6 +376,153 @@ const searchGlobalDictionary = async (req, res) => {
   }
 };
 
+// ─── GET /api/alerts/expiry ─────────────────────────────────
+// Fetch batches expiring within 90 and 180 days plus expired batches
+// ──────────────────────────────────────────────────────────────
+const getExpiryAlerts = async (req, res) => {
+  try {
+    const now = new Date();
+    const in90Days = new Date(now);
+    in90Days.setDate(in90Days.getDate() + 90);
+    const in180Days = new Date(now);
+    in180Days.setDate(in180Days.getDate() + 180);
+
+    const batches = await prisma.batch.findMany({
+      where: {
+        quantity: { gt: 0 },
+        expiryDate: { lte: in180Days },
+      },
+      include: {
+        medicine: {
+          select: {
+            id: true,
+            tradeName: true,
+            genericName: true,
+            scientificName: true,
+            barcode: true,
+            category: true,
+            sellingPrice: true,
+          },
+        },
+      },
+      orderBy: { expiryDate: "asc" },
+    });
+
+    const expired = [];
+    const within90Days = [];
+    const within180Days = [];
+
+    for (const batch of batches) {
+      const exp = new Date(batch.expiryDate);
+      if (exp < now) {
+        expired.push(batch);
+      } else if (exp <= in90Days) {
+        within90Days.push(batch);
+      } else {
+        within180Days.push(batch);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      timestamp: now.toISOString(),
+      summary: {
+        expiredCount: expired.length,
+        within90DaysCount: within90Days.length,
+        within180DaysCount: within180Days.length,
+        totalAlertsCount: batches.length,
+      },
+      data: {
+        expired,
+        within90Days,
+        within180Days,
+      },
+    });
+  } catch (error) {
+    console.error("[Medicine] Expiry Alerts error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch expiry alerts." });
+  }
+};
+
+// ─── POST /api/medicines/link ────────────────────────────────
+// Stock intake after barcode scanning — creates a new Batch record
+// and updates the parent Medicine's totalStock atomically.
+// ──────────────────────────────────────────────────────────────
+const linkMedicineStock = async (req, res) => {
+  try {
+    const { pharmacyId } = req.user;
+    const { medicineId, barcode, quantity, expiryDate } = req.body;
+
+    const parsedQuantity = parseInt(quantity, 10);
+    if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
+      return res.status(400).json({ success: false, message: "Valid quantity greater than zero is required." });
+    }
+
+    if (!expiryDate) {
+      return res.status(400).json({ success: false, message: "Expiry date is required for batch intake." });
+    }
+
+    const parsedExpiry = new Date(expiryDate);
+    if (isNaN(parsedExpiry.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid expiry date format." });
+    }
+
+    let medicine = null;
+    if (medicineId) {
+      medicine = await prisma.medicine.findFirst({ where: { id: medicineId, pharmacyId } });
+    } else if (barcode) {
+      medicine = await prisma.medicine.findFirst({ where: { barcode, pharmacyId } });
+    }
+
+    if (!medicine) {
+      return res.status(404).json({ success: false, message: "Medicine not found." });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const batch = await tx.batch.create({
+        data: {
+          medicineId: medicine.id,
+          quantity: parsedQuantity,
+          expiryDate: parsedExpiry,
+        },
+      });
+
+      const aggregation = await tx.batch.aggregate({
+        where: { medicineId: medicine.id },
+        _sum: { quantity: true },
+      });
+
+      const totalStock = aggregation._sum.quantity || 0;
+
+      const earliestBatch = await tx.batch.findFirst({
+        where: { medicineId: medicine.id, quantity: { gt: 0 } },
+        orderBy: { expiryDate: "asc" },
+      });
+
+      const updatedMedicine = await tx.medicine.update({
+        where: { id: medicine.id },
+        data: {
+          totalStock,
+          stock: totalStock,
+          expiryDate: earliestBatch ? earliestBatch.expiryDate : parsedExpiry,
+          barcode: barcode || medicine.barcode,
+        },
+      });
+
+      return { batch, medicine: updatedMedicine };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Batch created and total stock updated successfully.",
+      data: result,
+    });
+  } catch (error) {
+    console.error("[Medicine] Link stock error:", error);
+    return res.status(500).json({ success: false, message: "Failed to link stock batch." });
+  }
+};
+
 module.exports = {
   getMedicines,
   getMedicineById,
@@ -386,4 +533,9 @@ module.exports = {
   getCategories,
   searchGlobalDictionary,
   importExcel,
+  getExpiryAlerts,
+  linkMedicineStock,
 };
+
+
+

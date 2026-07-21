@@ -35,14 +35,73 @@ const createSale = async (req, res) => {
           throw new Error(`Medicine with ID ${item.medicineId} not found.`);
         }
 
-        if (medicine.stock < item.quantity) {
-          throw new Error(`Insufficient stock for "${medicine.tradeName}". Available: ${medicine.stock}, Requested: ${item.quantity}`);
+        // a. Fetch all Batch records for medicine where quantity > 0, ordered by expiryDate ASC
+        let batches = await tx.batch.findMany({
+          where: { medicineId: item.medicineId, quantity: { gt: 0 } },
+          orderBy: { expiryDate: "asc" },
+        });
+
+        const totalBatchQty = batches.reduce((sum, b) => sum + b.quantity, 0);
+
+        // Fallback for legacy items: create initial batch if legacy stock exists but no Batch records
+        if (batches.length === 0 && medicine.stock >= item.quantity) {
+          const initialBatch = await tx.batch.create({
+            data: {
+              medicineId: medicine.id,
+              quantity: medicine.stock,
+              expiryDate: medicine.expiryDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            },
+          });
+          batches = [initialBatch];
+        } else if (totalBatchQty < item.quantity && medicine.stock < item.quantity) {
+          throw new Error(`Insufficient stock for "${medicine.tradeName}". Available: ${totalBatchQty || medicine.stock}, Requested: ${item.quantity}`);
         }
 
-        // Deduct stock
+        // b. FEFO Subtraction Loop: Deduct required quantity starting from oldest batch
+        let remainingToDeduct = item.quantity;
+
+        for (const batch of batches) {
+          if (remainingToDeduct <= 0) break;
+
+          if (batch.quantity >= remainingToDeduct) {
+            const newQty = batch.quantity - remainingToDeduct;
+            await tx.batch.update({
+              where: { id: batch.id },
+              data: { quantity: newQty },
+            });
+            remainingToDeduct = 0;
+          } else {
+            remainingToDeduct -= batch.quantity;
+            await tx.batch.update({
+              where: { id: batch.id },
+              data: { quantity: 0 },
+            });
+          }
+        }
+
+        if (remainingToDeduct > 0) {
+          throw new Error(`Could not deduct full requested quantity for "${medicine.tradeName}" from available batches.`);
+        }
+
+        // c. Update parent Medicine.totalStock and stock
+        const totalRemaining = await tx.batch.aggregate({
+          where: { medicineId: medicine.id },
+          _sum: { quantity: true },
+        });
+        const updatedTotalStock = totalRemaining._sum.quantity || 0;
+
+        const nextExpiringBatch = await tx.batch.findFirst({
+          where: { medicineId: medicine.id, quantity: { gt: 0 } },
+          orderBy: { expiryDate: "asc" },
+        });
+
         await tx.medicine.update({
           where: { id: item.medicineId },
-          data: { stock: { decrement: item.quantity } },
+          data: {
+            totalStock: updatedTotalStock,
+            stock: updatedTotalStock,
+            expiryDate: nextExpiringBatch ? nextExpiringBatch.expiryDate : medicine.expiryDate,
+          },
         });
 
         const lineTotal = medicine.sellingPrice * item.quantity;
@@ -55,6 +114,7 @@ const createSale = async (req, res) => {
           tradeName: medicine.tradeName, // For response
         });
       }
+
 
       // Generate robust sequential invoice number based on the latest INV- sale
       const lastSale = await tx.sale.findFirst({

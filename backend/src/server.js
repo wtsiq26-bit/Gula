@@ -49,10 +49,15 @@ app.use(morgan("dev"));
 // ─── Static Files (uploaded images) ──────────────────────────
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
+const { getExpiryAlerts } = require("./controllers/medicineController");
+const { protect } = require("./middleware/auth");
+
 // ─── API Routes ──────────────────────────────────────────────
 app.use("/api/auth", authRoutes);
+app.use("/api/alerts/expiry", protect, getExpiryAlerts);
 app.use("/api/medicines", medicineRoutes);
 app.use("/api/sales", saleRoutes);
+
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/reports", reportRoutes);

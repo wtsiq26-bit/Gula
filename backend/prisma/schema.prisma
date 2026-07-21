@@ -92,10 +92,11 @@ model Medicine {
   costPrice      Float     @default(0)
   sellingPrice   Float     @default(0)
   stock          Int       @default(0)
+  totalStock     Int       @default(0)
   expiryDate     DateTime?
   image          String?   // File path to uploaded image
   createdAt      DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  updatedAt      DateTime  @updatedAt
 
   // Relations
   pharmacyId String
@@ -103,11 +104,30 @@ model Medicine {
   supplierId String?
   supplier   Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   saleItems  SaleItem[]
+  batches    Batch[]
 
   @@index([pharmacyId])
   @@index([barcode])
   @@index([supplierId])
 }
+
+// ─── Batch ───────────────────────────────────────────────────
+// Medical-grade FEFO batch tracking. Each batch stores quantity
+// and expiry date for a specific medicine.
+// ─────────────────────────────────────────────────────────────
+model Batch {
+  id          String   @id @default(uuid())
+  medicineId  String
+  medicine    Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  quantity    Int      @default(0)
+  expiryDate  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([medicineId])
+  @@index([expiryDate])
+}
+
 
 // ─── Sale ────────────────────────────────────────────────────
 // A completed checkout transaction. Contains one or more
