@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,7 +9,7 @@ import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import SkeletonTable from "@/components/SkeletonTable";
 import ScientificNameAutocomplete from "@/components/ScientificNameAutocomplete";
-import { Search, Plus, Edit, Trash, Image as ImageIcon, Box, AlertTriangle, AlertCircle, Camera } from "lucide-react";
+import { Search, Plus, Edit, Trash, Image as ImageIcon, Box, AlertTriangle, AlertCircle, Camera, FileSpreadsheet } from "lucide-react";
 import CameraScanner from "@/components/CameraScanner";
 import { formatCurrency } from "@/lib/formatCurrency";
 
@@ -221,9 +222,18 @@ export default function InventoryPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">{medicines.length} مادة مسجلة</p>
         </div>
-        <button onClick={() => openModal()} className="btn-primary shadow-sm hover:shadow-md">
-          <Plus className="w-4 h-4 me-2" /> إضافة مادة
-        </button>
+        <div className="flex items-center gap-3">
+          <Link 
+            href="/inventory/import" 
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm font-semibold transition-all shadow-sm"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>استيراد الأدوية (Excel)</span>
+          </Link>
+          <button onClick={() => openModal()} className="btn-primary shadow-sm hover:shadow-md">
+            <Plus className="w-4 h-4 me-2" /> إضافة مادة
+          </button>
+        </div>
       </div>
 
       {/* Search */}

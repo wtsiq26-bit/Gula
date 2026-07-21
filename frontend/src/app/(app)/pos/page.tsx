@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useReactToPrint } from "react-to-print";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -36,6 +37,11 @@ export default function POSPage() {
   const [showScanner, setShowScanner] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useReactToPrint({
+    contentRef: receiptRef,
+  });
 
   // ─── Keyboard Hooks ─────────────────────────────────────────
   useBarcodeScanner(async (barcode) => {
@@ -159,7 +165,7 @@ export default function POSPage() {
 
   // ─── Checkout ──────────────────────────────────────────────
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || processing) return;
     setProcessing(true);
     try {
       const payload = {
@@ -196,7 +202,7 @@ export default function POSPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-6rem)] animate-fade-in flex gap-6">
+    <div className="h-[calc(100vh-6rem)] animate-fade-in flex gap-6 print:hidden">
       
       {/* ─── LEFT PANEL (in RTL, this is the main 8 cols) ─── */}
       <div className="flex-1 lg:w-2/3 flex flex-col bg-surface-container-lowest dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden relative">
@@ -413,13 +419,13 @@ export default function POSPage() {
 
       {/* ─── Last Sale Receipt Modal ─── */}
       {lastSale && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md animate-fade-in print:hidden">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-8 max-w-sm w-full text-center animate-fade-in-up">
             <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">تمت عملية الدفع بنجاح</h2>
-            <p className="text-slate-500 mt-2 font-mono text-lg">{lastSale.invoiceNo}</p>
+            <p className="text-slate-500 mt-2 font-mono text-lg">{lastSale.invoiceNumber || lastSale.invoiceNo || lastSale.id}</p>
             
             <div className="my-6 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg">
               <p className="text-sm text-slate-500">الإجمالي المدفوع</p>
@@ -430,7 +436,7 @@ export default function POSPage() {
               <button onClick={() => downloadInvoice(lastSale.id)} className="flex-1 btn-secondary">
                 <Download className="w-4 h-4 me-2" /> PDF
               </button>
-              <button onClick={() => window.print()} className="flex-1 btn-secondary">
+              <button onClick={() => handlePrint()} className="flex-1 btn-secondary">
                 <Printer className="w-4 h-4 me-2" /> طباعة
               </button>
             </div>
@@ -441,44 +447,68 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* ─── Thermal Print Styles ─── */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          body * { visibility: hidden; }
-          .receipt-print, .receipt-print * { visibility: visible; }
-          .receipt-print { position: absolute; left: 0; top: 0; width: 226.77px; margin: 0; padding: 10px; font-family: monospace; font-size: 10px; color: #000; background: #fff; direction: rtl; text-align: start; }
-        }
-      `}} />
-      
-      {/* Hidden Thermal Receipt for printing */}
-      {lastSale && (
-        <div className="receipt-print hidden">
-          <div className="text-center font-bold mb-2">صيدلية النور</div>
-          <div className="text-center text-[9px] mb-2">بغداد، العراق</div>
+      {/* ─── Hidden Thermal Receipt Component for react-to-print ─── */}
+      <div className="hidden">
+        <div ref={receiptRef} className="p-6 bg-white text-black font-mono text-xs text-right w-[300px] mx-auto" dir="rtl">
+          <div className="text-center font-bold text-base mb-1">صيدلية النور</div>
+          <div className="text-center text-xs text-slate-600 mb-2">بغداد، العراق</div>
           <div className="border-b border-dashed border-black my-2"></div>
-          <div className="text-[9px]">الفاتورة: {lastSale.invoiceNo}</div>
-          <div className="text-[9px]">التاريخ: {new Date(lastSale.createdAt).toLocaleString()}</div>
-          <div className="border-b border-dashed border-black my-2"></div>
-          <table className="w-full text-[9px]">
-            <thead>
-              <tr className="text-start"><th className="pb-1 text-start">المادة</th><th className="pb-1 text-center">الكمية</th><th className="pb-1 text-end">الإجمالي</th></tr>
-            </thead>
-            <tbody>
-              {lastSale.items.map((item: any, i: number) => (
-                <tr key={i}>
-                  <td className="py-0.5 truncate max-w-[100px] text-start">{item.medicine.tradeName}</td>
-                  <td className="py-0.5 text-center">{item.quantity}</td>
-                  <td className="py-0.5 text-end font-bold" dir="ltr">{formatCurrency(item.subtotal)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="border-b border-dashed border-black my-2"></div>
-          <div className="text-end font-bold text-[11px] mb-1">المجموع: {formatCurrency(lastSale.totalAmount)}</div>
-          <div className="border-b border-dashed border-black my-2"></div>
-          <div className="text-center text-[8px] mt-4">شكراً لزيارتكم!</div>
+          
+          {lastSale && (
+            <>
+              <div className="flex justify-between text-xs my-1">
+                <span>رقم الفاتورة:</span>
+                <span className="font-bold">{lastSale.invoiceNumber || lastSale.invoiceNo || lastSale.id}</span>
+              </div>
+              <div className="flex justify-between text-xs my-1">
+                <span>التاريخ:</span>
+                <span>{new Date(lastSale.createdAt).toLocaleString("ar-IQ")}</span>
+              </div>
+              {lastSale.user?.username && (
+                <div className="flex justify-between text-xs my-1">
+                  <span>الكاشير:</span>
+                  <span>{lastSale.user.username}</span>
+                </div>
+              )}
+              
+              <div className="border-b border-dashed border-black my-2"></div>
+              
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-black">
+                    <th className="pb-1 text-right font-bold">المادة</th>
+                    <th className="pb-1 text-center font-bold">الكمية</th>
+                    <th className="pb-1 text-left font-bold">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dashed divide-slate-300">
+                  {lastSale.items && lastSale.items.map((item: any, i: number) => {
+                    const name = item.medicine?.tradeName || item.tradeName || "مادة";
+                    const qty = item.quantity || 1;
+                    const price = item.unitPrice || item.sellingPrice || 0;
+                    const subtotal = item.subtotal || (qty * price);
+                    return (
+                      <tr key={i}>
+                        <td className="py-1 text-right font-semibold">{name}</td>
+                        <td className="py-1 text-center">{qty}</td>
+                        <td className="py-1 text-left font-bold" dir="ltr">{formatCurrency(subtotal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <div className="border-b border-dashed border-black my-2"></div>
+              <div className="flex justify-between items-center text-sm font-extrabold my-2">
+                <span>المجموع:</span>
+                <span dir="ltr" className="text-base">{formatCurrency(lastSale.totalAmount)}</span>
+              </div>
+              <div className="border-b border-dashed border-black my-2"></div>
+              <div className="text-center text-xs mt-4">شكراً لزيارتكم! نتمنى لكم الشفاء العاجل.</div>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ─── Camera Scanner Modal ─── */}
       {showScanner && (

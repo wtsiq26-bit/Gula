@@ -15,6 +15,7 @@ const {
   deleteMedicine,
   getCategories,
   searchGlobalDictionary,
+  importExcel,
 } = require("../controllers/medicineController");
 
 // All routes require authentication
@@ -25,6 +26,7 @@ router.get("/", getMedicines);
 router.get("/categories/list", getCategories);
 router.get("/barcode/:barcode", getMedicineByBarcode);
 router.get("/:id", getMedicineById);
+router.post("/import", upload.single("file"), importExcel);
 router.post("/", upload.single("image"), createMedicine);
 router.put("/:id", upload.single("image"), updateMedicine);
 router.delete("/:id", deleteMedicine);

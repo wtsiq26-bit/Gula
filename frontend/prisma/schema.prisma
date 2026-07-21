@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Pharmacy {
+  id        String   @id @default(uuid())
+  name      String
+  location  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users      User[]
+  suppliers  Supplier[]
+  medicines  Medicine[]
+  sales      Sale[]
+}
+
+model User {
+  id         String   @id @default(uuid())
+  username   String
+  email      String   @unique
+  password   String   
+  role       String   @default("ADMIN")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  sales      Sale[]
+
+  @@index([pharmacyId])
+  @@index([email])
+}
+
+model Supplier {
+  id            String   @id @default(uuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pharmacyId String
+  pharmacy   Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  medicines  Medicine[]
+
+  @@index([pharmacyId])
+}
+
+model Medicine {
+  id             String    @id @default(uuid())
+  tradeName      String
+  genericName    String?
+  scientificName String?
+  category       String?
+  barcode        String?   @unique
+  manufacturer   String?
+  country        String?
+  dosageForm     String?
+  nationalCode   String?
+  costPrice      Float     @default(0)
+  sellingPrice   Float     @default(0)
+  stock          Int       @default(0)
+  expiryDate     DateTime?
+  image          String?   
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  pharmacyId String
+  pharmacy   Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  supplierId String?
+  supplier   Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  saleItems  SaleItem[]
+
+  @@index([pharmacyId])
+  @@index([barcode])
+  @@index([supplierId])
+}
+
+model Sale {
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique @default(uuid())
+  totalAmount   Float
+  paymentMethod String   @default("CASH")
+  createdAt     DateTime @default(now())
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  items      SaleItem[]
+
+  @@index([pharmacyId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model SaleItem {
+  id        String @id @default(uuid())
+  quantity  Int
+  unitPrice Float
+
+  saleId     String
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  medicineId String
+  medicine   Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([medicineId])
+}

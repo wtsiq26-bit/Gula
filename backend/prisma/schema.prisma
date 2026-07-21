@@ -79,17 +79,22 @@ model Supplier {
 // optionally links to a supplier. Barcode is globally unique.
 // ─────────────────────────────────────────────────────────────
 model Medicine {
-  id           String    @id @default(uuid())
-  tradeName    String
-  genericName  String?
-  category     String?
-  barcode      String?   @unique
-  costPrice    Float     @default(0)
-  sellingPrice Float     @default(0)
-  stock        Int       @default(0)
-  expiryDate   DateTime?
-  image        String?   // File path to uploaded image
-  createdAt    DateTime  @default(now())
+  id             String    @id @default(uuid())
+  tradeName      String
+  genericName    String?
+  scientificName String?
+  category       String?
+  barcode        String?   @unique
+  manufacturer   String?
+  country        String?
+  dosageForm     String?
+  nationalCode   String?
+  costPrice      Float     @default(0)
+  sellingPrice   Float     @default(0)
+  stock          Int       @default(0)
+  expiryDate     DateTime?
+  image          String?   // File path to uploaded image
+  createdAt      DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   // Relations

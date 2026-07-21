@@ -56,9 +56,34 @@ const createSale = async (req, res) => {
         });
       }
 
-      // Generate sequential invoice number
-      const saleCount = await tx.sale.count({ where: { pharmacyId } });
-      const invoiceNumber = `INV-${String(saleCount + 1).padStart(6, "0")}`;
+      // Generate robust sequential invoice number based on the latest INV- sale
+      const lastSale = await tx.sale.findFirst({
+        where: {
+          pharmacyId,
+          invoiceNumber: { startsWith: "INV-" },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      let nextNumber = 1;
+      if (lastSale && lastSale.invoiceNumber) {
+        const match = lastSale.invoiceNumber.match(/\d+/);
+        if (match) {
+          const lastNum = parseInt(match[0], 10);
+          if (!isNaN(lastNum)) {
+            nextNumber = lastNum + 1;
+          }
+        }
+      }
+
+      // Fail-safe check to guarantee zero collisions
+      let invoiceNumber = `INV-${String(nextNumber).padStart(6, "0")}`;
+      let exists = await tx.sale.findUnique({ where: { invoiceNumber } });
+      while (exists) {
+        nextNumber += 1;
+        invoiceNumber = `INV-${String(nextNumber).padStart(6, "0")}`;
+        exists = await tx.sale.findUnique({ where: { invoiceNumber } });
+      }
 
       // Create the sale record
       const sale = await tx.sale.create({

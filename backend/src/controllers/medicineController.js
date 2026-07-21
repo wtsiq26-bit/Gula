@@ -7,6 +7,7 @@
 const prisma = require("../config/db");
 const fs = require("fs");
 const path = require("path");
+const xlsx = require("xlsx");
 
 // ─── GET /api/medicines ──────────────────────────────────────
 // List all medicines for the authenticated user's pharmacy.
@@ -258,6 +259,78 @@ const getCategories = async (req, res) => {
   }
 };
 
+// ─── POST /api/medicines/import ──────────────────────────────
+const importExcel = async (req, res) => {
+  try {
+    const { pharmacyId } = req.user;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded." });
+    }
+
+    const workbook = xlsx.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(sheet);
+
+    if (!data || data.length === 0) {
+      return res.status(400).json({ success: false, message: "Excel file is empty." });
+    }
+
+    const validRecords = [];
+    for (const row of data) {
+      const tradeName = String(row["TRADE NAME"] || row["Trade Name"] || "").trim();
+      if (!tradeName) continue;
+
+      const scientificName = String(row["SCIENTIFIC  NAME"] || row["SCIENTIFIC NAME"] || "").trim();
+      const manufacturer = String(row["Authorization holder (Manufacturer)"] || row["Manufacturer"] || "").trim();
+      const country = String(row["NATIONALITY OF THE MANUFACTURER)"] || row["NATIONALITY OF THE MANUFACTURER"] || "").trim();
+      const dosageForm = String(row["PACKAGING & DOSAGE FORM"] || row["Dosage Form"] || "").trim();
+      const nationalCode = String(row["N.code"] || row["N.Code"] || "").trim();
+
+      validRecords.push({
+        id: crypto.randomUUID(),
+        pharmacyId,
+        tradeName,
+        scientificName: scientificName || null,
+        manufacturer: manufacturer || null,
+        country: country || null,
+        dosageForm: dosageForm || null,
+        nationalCode: nationalCode || null,
+        barcode: null,
+      });
+    }
+
+    if (validRecords.length === 0) {
+      return res.status(400).json({ success: false, message: "No valid rows found to import." });
+    }
+
+    // Chunk insertion in batches of 200 to prevent SQLite parameter limit crash (5200+ records)
+    const BATCH_SIZE = 200;
+    let importedCount = 0;
+
+    for (let i = 0; i < validRecords.length; i += BATCH_SIZE) {
+      const batch = validRecords.slice(i, i + BATCH_SIZE);
+      const result = await prisma.medicine.createMany({
+        data: batch,
+      });
+      importedCount += result.count;
+    }
+
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch (e) {}
+
+    return res.status(200).json({ 
+      success: true, 
+      message: `تم استيراد ${importedCount} دواء بنجاح في قاعدة البيانات.`, 
+      count: importedCount 
+    });
+  } catch (error) {
+    console.error("[Medicine] Import Excel error:", error);
+    return res.status(500).json({ success: false, message: "فشل استيراد الأدوية من ملف Excel." });
+  }
+};
+
 // ─── GET /api/medicines/dictionary/search ──────────────────────
 // Search the global dictionary (all medicines, specifically OpenFDA seeded data) 
 // for generic names, irrespective of the current user's pharmacyId.
@@ -295,4 +368,5 @@ module.exports = {
   deleteMedicine,
   getCategories,
   searchGlobalDictionary,
+  importExcel,
 };
