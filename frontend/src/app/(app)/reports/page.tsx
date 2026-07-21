@@ -62,13 +62,21 @@ export default function ReportsPage() {
     setExporting(true);
     const toastId = toast.loading("جاري جلب إعدادات التقرير وإنشاء ملف PDF...");
 
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      if (typeof args[0] === "string" && args[0].includes('unsupported color function "lab"')) {
+        return;
+      }
+      originalConsoleError.apply(console, args);
+    };
+
     try {
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
         onclone: (clonedDoc) => {
-          const styles = clonedDoc.querySelectorAll("style");
+          const styles = clonedDoc.querySelectorAll("style, link[rel='stylesheet']");
           styles.forEach((el) => {
             if (el.textContent) {
               el.textContent = el.textContent
@@ -98,6 +106,7 @@ export default function ReportsPage() {
       console.error("PDF Export Error:", err);
       toast.error("فشل تصدير التقرير إلى PDF", { id: toastId });
     } finally {
+      console.error = originalConsoleError;
       setExporting(false);
     }
   };
