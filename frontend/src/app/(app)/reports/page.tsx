@@ -1,7 +1,5 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 import { useEffect, useState, useRef } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
