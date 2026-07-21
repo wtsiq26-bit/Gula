@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useForm, Controller } from "react-hook-form";
@@ -55,8 +57,16 @@ export default function InventoryPage() {
 
   const fetchMedicines = useCallback(async () => {
     try {
-      const res = await api.get(`/medicines?search=${search}&limit=200`);
-      setMedicines(res.data);
+      const res: any = await api.get(`/medicines?search=${encodeURIComponent(search)}&limit=1000`);
+      let items: any[] = [];
+      if (Array.isArray(res)) {
+        items = res;
+      } else if (Array.isArray(res?.data)) {
+        items = res.data;
+      } else if (Array.isArray(res?.medicines)) {
+        items = res.medicines;
+      }
+      setMedicines(items);
     } catch (err: any) {
       toast.error(err.message || "فشل تحميل المخزون");
     } finally {
@@ -142,8 +152,8 @@ export default function InventoryPage() {
       setImagePreview(medicine.imageUrl ? `${API_BASE}${medicine.imageUrl}` : null);
       reset({
         tradeName: medicine.tradeName,
-        genericName: medicine.genericName || "",
-        category: medicine.category || "",
+        genericName: medicine.scientificName || medicine.genericName || "",
+        category: medicine.category || medicine.dosageForm || "",
         barcode: medicine.barcode || "",
         costPrice: medicine.costPrice?.toString() || "",
         sellingPrice: medicine.sellingPrice?.toString() || "",
@@ -290,7 +300,7 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-6 py-4 text-start font-semibold text-slate-900 dark:text-white">
                         {medicine.tradeName}
-                        <div className="text-xs text-slate-500 font-normal">{medicine.genericName}</div>
+                        <div className="text-xs text-slate-500 font-normal">{medicine.scientificName || medicine.genericName || "-"}</div>
                       </td>
                       <td className="px-6 py-4 text-start text-slate-500 font-mono text-xs">{medicine.barcode || "-"}</td>
                       

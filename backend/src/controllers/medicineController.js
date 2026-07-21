@@ -19,16 +19,31 @@ const getMedicines = async (req, res) => {
     const { pharmacyId } = req.user;
     const { search, category, supplierId, lowStock, expiringSoon, page = 1, limit = 50 } = req.query;
 
-    // Build where clause
-    const where = { pharmacyId };
+    // Build where clause - Filter to show ONLY imported Excel medicines in main list view
+    const where = {
+      pharmacyId,
+      AND: [
+        {
+          OR: [
+            { scientificName: { not: null } },
+            { manufacturer: { not: null } },
+            { country: { not: null } },
+          ],
+        },
+      ],
+    };
 
-    // Search across tradeName, genericName, barcode
+    // Search across tradeName, genericName, scientificName, barcode, nationalCode
     if (search) {
-      where.OR = [
-        { tradeName: { contains: search } },
-        { genericName: { contains: search } },
-        { barcode: { contains: search } },
-      ];
+      where.AND.push({
+        OR: [
+          { tradeName: { contains: search } },
+          { genericName: { contains: search } },
+          { scientificName: { contains: search } },
+          { barcode: { contains: search } },
+          { nationalCode: { contains: search } },
+        ],
+      });
     }
 
     if (category) where.category = category;
@@ -196,7 +211,9 @@ const updateMedicine = async (req, res) => {
       data: {
         tradeName: tradeName || existing.tradeName,
         genericName: genericName !== undefined ? genericName : existing.genericName,
+        scientificName: genericName !== undefined ? genericName : existing.scientificName,
         category: category !== undefined ? category : existing.category,
+        dosageForm: category !== undefined ? category : existing.dosageForm,
         barcode: barcode !== undefined ? (barcode || null) : existing.barcode,
         costPrice: costPrice !== undefined ? parseFloat(costPrice) : existing.costPrice,
         sellingPrice: sellingPrice !== undefined ? parseFloat(sellingPrice) : existing.sellingPrice,

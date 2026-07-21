@@ -26,12 +26,24 @@ export default function ImportMedicinesPage() {
     setLoading(true);
     setResult(null);
 
+    const user = JSON.parse(localStorage.getItem("gula_user") || "{}");
+    const token = localStorage.getItem("gula_token");
+
     const formData = new FormData();
     formData.append("file", file);
+    if (user.pharmacyId) {
+      formData.append("pharmacyId", user.pharmacyId);
+    }
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
 
     try {
       const res = await fetch("/api/medicines/import", {
         method: "POST",
+        headers,
         body: formData,
       });
 

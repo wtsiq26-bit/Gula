@@ -1,5 +1,6 @@
 // Gula PMS - Next.js Excel Import Route Handler (v2) - Updated: 2023-10-27
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import * as xlsx from "xlsx";
 import { prisma } from "@/lib/prisma";
 
@@ -7,6 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    let pharmacyId = formData.get("pharmacyId") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "الرجاء اختيار ملف Excel أولاً" }, { status: 400 });
@@ -22,10 +24,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ملف Excel فارغ أو غير صالح" }, { status: 400 });
     }
 
-    // Get default or first pharmacy in DB to associate records with
-    const pharmacy = await prisma.pharmacy.findFirst();
-    if (!pharmacy) {
-      return NextResponse.json({ error: "لم يتم العثور على أي صيدلية مسجلة في قاعدة البيانات" }, { status: 400 });
+    // Decode token from header if pharmacyId not in formData
+    if (!pharmacyId) {
+      const authHeader = request.headers.get("authorization");
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const token = authHeader.substring(7);
+          const base64Url = token.split(".")[1];
+          if (base64Url) {
+            const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+            const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+            const decoded = JSON.parse(jsonPayload);
+            if (decoded?.pharmacyId) {
+              pharmacyId = decoded.pharmacyId;
+            }
+          }
+        } catch { /* fallback */ }
+      }
+    }
+
+    if (!pharmacyId) {
+      const pharmacy = await prisma.pharmacy.findFirst();
+      if (!pharmacy) {
+        return NextResponse.json({ error: "لم يتم العثور على أي صيدلية مسجلة في قاعدة البيانات" }, { status: 400 });
+      }
+      pharmacyId = pharmacy.id;
     }
 
     const validRecords = [];
@@ -41,7 +64,7 @@ export async function POST(request: NextRequest) {
 
       validRecords.push({
         id: crypto.randomUUID(),
-        pharmacyId: pharmacy.id,
+        pharmacyId: pharmacyId!,
         tradeName,
         scientificName: scientificName || null,
         manufacturer: manufacturer || null,
@@ -67,6 +90,9 @@ export async function POST(request: NextRequest) {
       });
       importedCount += result.count;
     }
+
+    revalidatePath("/inventory");
+    revalidatePath("/pos");
 
     return NextResponse.json({
       success: true,
