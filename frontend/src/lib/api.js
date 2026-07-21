@@ -38,10 +38,16 @@ export async function apiClient(endpoint, options = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    console.warn(`[API Client Network Warning] Failed to reach ${url}:`, err);
+    throw new Error("تعذر الاتصال بالخادم. يرجى التأكد من تشغيل الخادم والاتصال بالشبكة.");
+  }
 
   // Handle non-OK responses
   if (!response.ok) {

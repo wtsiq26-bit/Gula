@@ -67,6 +67,17 @@ export default function ReportsPage() {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
+        onclone: (clonedDoc) => {
+          const styles = clonedDoc.querySelectorAll("style");
+          styles.forEach((el) => {
+            if (el.textContent) {
+              el.textContent = el.textContent
+                .replace(/lab\([^)]+\)/gi, "#10b981")
+                .replace(/oklch\([^)]+\)/gi, "#10b981")
+                .replace(/color\(srgb[^)]+\)/gi, "#10b981");
+            }
+          });
+        },
       });
 
       const imgData = canvas.toDataURL("image/png");

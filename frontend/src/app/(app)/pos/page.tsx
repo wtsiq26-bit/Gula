@@ -81,8 +81,8 @@ export default function POSPage() {
   useEffect(() => {
     const fetchQuickAccess = async () => {
       try {
-        const res = await api.get(`/medicines?limit=12`);
-        setQuickAccess(res.data);
+        const res: any = await api.get(`/medicines?limit=12`);
+        setQuickAccess(Array.isArray(res) ? res : (res?.data || []));
       } catch (e) {
         console.error(e);
       }
