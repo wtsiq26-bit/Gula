@@ -81,6 +81,24 @@ export default function ReportsPage() {
         useCORS: true,
         backgroundColor: "#ffffff",
         onclone: (clonedDoc) => {
+          const win = clonedDoc.defaultView || window;
+          const origGetComputedStyle = win.getComputedStyle;
+
+          win.getComputedStyle = function (el: Element, pseudoElt?: string | null) {
+            const style = origGetComputedStyle.call(win, el, pseudoElt);
+            return new Proxy(style, {
+              get(target, prop, receiver) {
+                const val = Reflect.get(target, prop, receiver);
+                if (typeof val === "string" && (val.includes("lab(") || val.includes("oklch("))) {
+                  return val
+                    .replace(/lab\([^)]+\)/gi, "rgb(16, 185, 129)")
+                    .replace(/oklch\([^)]+\)/gi, "rgb(16, 185, 129)");
+                }
+                return val;
+              },
+            });
+          };
+
           const styles = clonedDoc.querySelectorAll("style, link[rel='stylesheet']");
           styles.forEach((el) => {
             if (el.textContent) {
