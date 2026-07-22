@@ -1,5 +1,10 @@
+// ──────────────────────────────────────────────────────────────
+// Gula PMS — Frontend Prisma Schema (Multi-Tenant Architecture)
+// ──────────────────────────────────────────────────────────────
+
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -17,7 +22,9 @@ model Pharmacy {
   users      User[]
   suppliers  Supplier[]
   medicines  Medicine[]
+  batches    Batch[]
   sales      Sale[]
+  saleItems  SaleItem[]
 }
 
 model User {
@@ -60,7 +67,7 @@ model Medicine {
   genericName    String?
   scientificName String?
   category       String?
-  barcode        String?   @unique
+  barcode        String?
   manufacturer   String?
   country        String?
   dosageForm     String?
@@ -71,6 +78,7 @@ model Medicine {
   totalStock     Int       @default(0)
   expiryDate     DateTime?
   image          String?   
+  isGlobal       Boolean   @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -81,24 +89,27 @@ model Medicine {
   saleItems  SaleItem[]
   batches    Batch[]
 
+  @@unique([pharmacyId, barcode])
   @@index([pharmacyId])
   @@index([barcode])
   @@index([supplierId])
 }
 
 model Batch {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   medicineId  String
-  medicine    Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
-  quantity    Int      @default(0)
+  medicine    Medicine  @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  pharmacyId  String?
+  pharmacy    Pharmacy? @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  quantity    Int       @default(0)
   expiryDate  DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
+  @@index([pharmacyId])
   @@index([medicineId])
   @@index([expiryDate])
 }
-
 
 model Sale {
   id            String   @id @default(uuid())
@@ -124,10 +135,13 @@ model SaleItem {
   unitPrice Float
 
   saleId     String
-  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale       Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
   medicineId String
-  medicine   Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  medicine   Medicine  @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  pharmacyId String?
+  pharmacy   Pharmacy? @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
 
+  @@index([pharmacyId])
   @@index([saleId])
   @@index([medicineId])
 }

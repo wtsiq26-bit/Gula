@@ -1,9 +1,16 @@
-// Gula PMS - Expiry Alerts API Route Handler
+// Gula PMS - Multi-Tenant Expiry Alerts API Route Handler (Updated)
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/getAuthSession";
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getAuthSession(request);
+    if (!session?.pharmacyId) {
+      return NextResponse.json({ success: false, message: "غير مصرح بالوصول." }, { status: 401 });
+    }
+    const currentPharmacyId = session.pharmacyId;
+
     const now = new Date();
     
     // 90 days threshold
@@ -14,9 +21,10 @@ export async function GET(request: NextRequest) {
     const in180Days = new Date(now);
     in180Days.setDate(in180Days.getDate() + 180);
 
-    // Fetch batches with quantity > 0 up to 180 days threshold or already expired
+    // Fetch batches scoped strictly to currentPharmacyId
     const batches = await prisma.batch.findMany({
       where: {
+        pharmacyId: currentPharmacyId,
         quantity: { gt: 0 },
         expiryDate: { lte: in180Days },
       },

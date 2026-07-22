@@ -19,9 +19,12 @@ const getMedicines = async (req, res) => {
     const { pharmacyId } = req.user;
     const { search, category, supplierId, lowStock, expiringSoon, page = 1, limit = 50 } = req.query;
 
-    // Build where clause - Filter to show ONLY imported Excel medicines in main list view
+    // Build where clause with Global Catalog Fallback
     const where = {
-      pharmacyId,
+      OR: [
+        { pharmacyId },
+        { isGlobal: true },
+      ],
       AND: [
         {
           OR: [
@@ -381,6 +384,7 @@ const searchGlobalDictionary = async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 const getExpiryAlerts = async (req, res) => {
   try {
+    const { pharmacyId } = req.user;
     const now = new Date();
     const in90Days = new Date(now);
     in90Days.setDate(in90Days.getDate() + 90);
@@ -389,6 +393,7 @@ const getExpiryAlerts = async (req, res) => {
 
     const batches = await prisma.batch.findMany({
       where: {
+        pharmacyId,
         quantity: { gt: 0 },
         expiryDate: { lte: in180Days },
       },
@@ -482,6 +487,7 @@ const linkMedicineStock = async (req, res) => {
       const batch = await tx.batch.create({
         data: {
           medicineId: medicine.id,
+          pharmacyId: medicine.pharmacyId,
           quantity: parsedQuantity,
           expiryDate: parsedExpiry,
         },

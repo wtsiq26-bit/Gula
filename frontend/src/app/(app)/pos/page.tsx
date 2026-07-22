@@ -35,9 +35,25 @@ export default function POSPage() {
 
   // Camera Scanner State
   const [showScanner, setShowScanner] = useState(false);
+  const [pharmacyInfo, setPharmacyInfo] = useState<{ name: string; location: string }>({ name: "", location: "" });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let savedPharmacy: any = {};
+    let savedUser: any = {};
+    try {
+      const rawP = localStorage.getItem("gula_pharmacy");
+      if (rawP && rawP !== "undefined") savedPharmacy = JSON.parse(rawP);
+      const rawU = localStorage.getItem("gula_user");
+      if (rawU && rawU !== "undefined") savedUser = JSON.parse(rawU);
+    } catch (e) {}
+    setPharmacyInfo({
+      name: savedPharmacy.name || savedUser.name || "الصيدلية",
+      location: savedPharmacy.location || savedUser.location || "",
+    });
+  }, []);
 
   const handlePrint = useReactToPrint({
     contentRef: receiptRef,
@@ -450,8 +466,10 @@ export default function POSPage() {
       {/* ─── Hidden Thermal Receipt Component for react-to-print ─── */}
       <div className="hidden">
         <div ref={receiptRef} className="p-6 bg-white text-black font-mono text-xs text-right w-[300px] mx-auto" dir="rtl">
-          <div className="text-center font-bold text-base mb-1">صيدلية النور</div>
-          <div className="text-center text-xs text-slate-600 mb-2">بغداد، العراق</div>
+          <div className="text-center font-bold text-base mb-1">{pharmacyInfo.name || "الصيدلية"}</div>
+          {pharmacyInfo.location && (
+            <div className="text-center text-xs text-slate-600 mb-2">{pharmacyInfo.location}</div>
+          )}
           <div className="border-b border-dashed border-black my-2"></div>
           
           {lastSale && (

@@ -1,12 +1,15 @@
+// Gula PMS - Multi-Tenant Reports API Route Handler
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/getAuthSession";
 
 export async function GET(request: NextRequest) {
   try {
-    const pharmacy = await prisma.pharmacy.findFirst();
-    if (!pharmacy) {
-      return NextResponse.json({ error: "لم يتم العثور على أي صيدلية مسجلة" }, { status: 400 });
+    const session = await getAuthSession(request);
+    if (!session?.pharmacyId) {
+      return NextResponse.json({ error: "غير مصرح بالوصول" }, { status: 401 });
     }
+    const currentPharmacyId = session.pharmacyId;
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -15,7 +18,7 @@ export async function GET(request: NextRequest) {
     const [todaySales, monthSales] = await Promise.all([
       prisma.sale.findMany({
         where: {
-          pharmacyId: pharmacy.id,
+          pharmacyId: currentPharmacyId,
           createdAt: { gte: todayStart },
         },
         include: {
@@ -30,7 +33,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.sale.findMany({
         where: {
-          pharmacyId: pharmacy.id,
+          pharmacyId: currentPharmacyId,
           createdAt: { gte: monthStart },
         },
         include: {

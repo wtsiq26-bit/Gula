@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,9 +11,12 @@ import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import SkeletonTable from "@/components/SkeletonTable";
 import ScientificNameAutocomplete from "@/components/ScientificNameAutocomplete";
-import { Search, Plus, Edit, Trash, Image as ImageIcon, Box, AlertTriangle, AlertCircle, Camera, FileSpreadsheet } from "lucide-react";
-import CameraScanner from "@/components/CameraScanner";
+import { 
+  Search, Plus, Edit, Trash, Image as ImageIcon, Box, AlertTriangle, 
+  FileSpreadsheet, QrCode, Link2, CheckCircle2, X
+} from "lucide-react";
 import { formatCurrency } from "@/lib/formatCurrency";
+import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:5000";
 
@@ -31,8 +34,8 @@ const medicineSchema = z.object({
 });
 
 export default function InventoryPage() {
-  const [medicines, setMedicines] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
+  const [medicines, setMedicines] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   
@@ -41,11 +44,19 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   
-  // Image
+  // First-Scan Barcode Binding Modal State
+  const [showBindingModal, setShowBindingModal] = useState(false);
+  const [unlinkedBarcode, setUnlinkedBarcode] = useState("");
+  const [selectedMedicineForLink, setSelectedMedicineForLink] = useState<any>(null);
+  const [linkSearchTerm, setLinkSearchTerm] = useState("");
+  const [linkQuantity, setLinkQuantity] = useState("10");
+  const [linkExpiryDate, setLinkExpiryDate] = useState("");
+  const [linkingSubmitting, setLinkingSubmitting] = useState(false);
+
+  // Image Upload
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
 
   // Inline Editing
   const [inlineEditCell, setInlineEditCell] = useState<{ id: string, field: string } | null>(null);
@@ -77,7 +88,7 @@ export default function InventoryPage() {
   const fetchSuppliers = async () => {
     try {
       const res = await api.get("/suppliers");
-      setSuppliers(res.data);
+      setSuppliers(res.data || []);
     } catch { /* ignore */ }
   };
 
@@ -91,16 +102,92 @@ export default function InventoryPage() {
     return () => clearTimeout(timer);
   }, [search, fetchMedicines]);
 
+  // ─── First-Scan Hardware Barcode Scanner Listener ─────────
+  const handleScannedBarcode = useCallback((barcode: string) => {
+    const cleanBarcode = barcode.trim();
+    if (!cleanBarcode) return;
+
+    const found = medicines.find((m) => m.barcode === cleanBarcode);
+    if (found) {
+      toast.success(`تم العثور على الدواء: ${found.tradeName} (المخزون الحالي: ${found.stock})`, { icon: "📦" });
+      setSearch(found.tradeName);
+    } else {
+      // Unlinked barcode -> trigger First-Scan Binding Workflow!
+      setUnlinkedBarcode(cleanBarcode);
+      setSelectedMedicineForLink(null);
+      setLinkSearchTerm("");
+      
+      const nextYear = new Date();
+      nextYear.setFullYear(nextYear.getFullYear() + 1);
+      setLinkExpiryDate(nextYear.toISOString().split("T")[0]);
+      
+      setShowBindingModal(true);
+      toast("باركود جديد غير مسجل! اختر دواءً من القائمة لربطه به.", { icon: "🔗" });
+    }
+  }, [medicines]);
+
+  useBarcodeScanner(handleScannedBarcode);
+
+  // ─── Filtered local medicines for barcode linking autocomplete
+  const filteredLocalMedicines = useMemo(() => {
+    if (!linkSearchTerm.trim()) return medicines.slice(0, 10);
+    const term = linkSearchTerm.toLowerCase();
+    return medicines.filter((m) => 
+      (m.tradeName && m.tradeName.toLowerCase().includes(term)) ||
+      (m.scientificName && m.scientificName.toLowerCase().includes(term)) ||
+      (m.genericName && m.genericName.toLowerCase().includes(term))
+    ).slice(0, 15);
+  }, [medicines, linkSearchTerm]);
+
+  // ─── Submit First-Scan Binding ──────────────────────────────
+  const handleLinkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMedicineForLink) {
+      toast.error("يرجى اختيار الدواء المراد ربطه من القائمة");
+      return;
+    }
+    if (!unlinkedBarcode.trim()) {
+      toast.error("يرجى إدخال أو مسح الباركود المراد ربطه");
+      return;
+    }
+    if (!linkExpiryDate) {
+      toast.error("تاريخ الصلاحية مطلوب لإضافة الشحنة المخزنية");
+      return;
+    }
+
+    setLinkingSubmitting(true);
+    try {
+      await api.post("/medicines/link", {
+        medicineId: selectedMedicineForLink.id,
+        barcode: unlinkedBarcode.trim(),
+        quantity: parseInt(linkQuantity, 10) || 1,
+        expiryDate: linkExpiryDate,
+      });
+
+      toast.success(`تم ربط الباركود (${unlinkedBarcode}) بالدواء (${selectedMedicineForLink.tradeName}) وتحديث المخزون بنجاح!`, {
+        duration: 5000,
+        icon: "🔗",
+      });
+
+      setShowBindingModal(false);
+      setSelectedMedicineForLink(null);
+      setUnlinkedBarcode("");
+      fetchMedicines();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "فشل عملية ربط الباركود");
+    } finally {
+      setLinkingSubmitting(false);
+    }
+  };
+
   // ─── Semantic Row Styles ──────────────────────────────────
   const getRowStyle = (medicine: any) => {
     const today = new Date();
     const expiry = medicine.expiryDate ? new Date(medicine.expiryDate) : null;
     
-    // Expired
     if (expiry && expiry < today) {
       return "bg-rose-50 dark:bg-rose-900/20 border-s-4 border-s-rose-500";
     }
-    // Low Stock
     if (medicine.stock <= 5) {
       return "bg-amber-50 dark:bg-amber-900/20 border-s-4 border-s-amber-500";
     }
@@ -123,7 +210,6 @@ export default function InventoryPage() {
       return;
     }
 
-    // Optimistic Update
     const prev = [...medicines];
     setMedicines(prev => prev.map((m: any) => m.id === medicine.id ? { ...m, [field]: parseFloat(newValue) || newValue } : m));
     setInlineEditCell(null);
@@ -132,7 +218,7 @@ export default function InventoryPage() {
       await api.put(`/medicines/${medicine.id}`, { [field]: newValue });
       toast.success("تم التحديث");
     } catch (err: any) {
-      setMedicines(prev); // Revert
+      setMedicines(prev);
       toast.error("فشل التحديث");
     }
   };
@@ -175,7 +261,6 @@ export default function InventoryPage() {
     try {
       const formData = new FormData();
       Object.keys(data).forEach((key) => {
-        // Ensure undefined or empty values are not sent as literal "undefined" strings
         const value = data[key];
         if (value !== undefined && value !== null) {
           if (key === "barcode" && typeof value === "string") {
@@ -207,7 +292,6 @@ export default function InventoryPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     
-    // Optimistic Delete
     const prev = [...medicines];
     setMedicines(prev => prev.filter((m: any) => m.id !== deleteTarget.id));
     setDeleteTarget(null);
@@ -216,7 +300,7 @@ export default function InventoryPage() {
       await api.delete(`/medicines/${deleteTarget.id}`);
       toast.success("تم الحذف بنجاح");
     } catch (err: any) {
-      setMedicines(prev); // Revert
+      setMedicines(prev);
       toast.error(err.message || "فشل الحذف");
     }
   };
@@ -232,7 +316,23 @@ export default function InventoryPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">{medicines.length} مادة مسجلة</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => {
+              setUnlinkedBarcode("");
+              setSelectedMedicineForLink(null);
+              setLinkSearchTerm("");
+              const nextYear = new Date();
+              nextYear.setFullYear(nextYear.getFullYear() + 1);
+              setLinkExpiryDate(nextYear.toISOString().split("T")[0]);
+              setShowBindingModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 rounded-lg text-sm font-semibold transition-all shadow-sm"
+          >
+            <QrCode className="w-4 h-4" />
+            <span>ربط باركود عند أول مسح</span>
+          </button>
+          
           <Link 
             href="/inventory/import" 
             className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm font-semibold transition-all shadow-sm"
@@ -240,21 +340,22 @@ export default function InventoryPage() {
             <FileSpreadsheet className="w-4 h-4" />
             <span>استيراد الأدوية (Excel)</span>
           </Link>
+
           <button onClick={() => openModal()} className="btn-primary shadow-sm hover:shadow-md">
             <Plus className="w-4 h-4 me-2" /> إضافة مادة
           </button>
         </div>
       </div>
 
-      {/* Search */}
+      {/* Search Bar */}
       <div className="relative max-w-md">
         <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-slate-400">
           <Search className="w-4 h-4" />
         </div>
         <input
           type="text"
-          placeholder="ابحث في المخزون..."
-          className="input-field ps-10"
+          placeholder="ابحث في المخزون بالاسم أو امسح الباركود..."
+          className="input-field ps-10 w-full"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -302,7 +403,29 @@ export default function InventoryPage() {
                         {medicine.tradeName}
                         <div className="text-xs text-slate-500 font-normal">{medicine.scientificName || medicine.genericName || "-"}</div>
                       </td>
-                      <td className="px-6 py-4 text-start text-slate-500 font-mono text-xs">{medicine.barcode || "-"}</td>
+                      <td className="px-6 py-4 text-start text-slate-500 font-mono text-xs">
+                        {medicine.barcode ? (
+                          <span className="bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            {medicine.barcode}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSelectedMedicineForLink(medicine);
+                              setLinkSearchTerm(medicine.tradeName);
+                              setUnlinkedBarcode("");
+                              const nextYear = new Date();
+                              nextYear.setFullYear(nextYear.getFullYear() + 1);
+                              setLinkExpiryDate(nextYear.toISOString().split("T")[0]);
+                              setShowBindingModal(true);
+                            }}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 underline flex items-center gap-1"
+                          >
+                            <Link2 className="w-3 h-3" />
+                            <span>ربط باركود</span>
+                          </button>
+                        )}
+                      </td>
                       
                       {/* Inline Editable Cost Price */}
                       <td className="px-6 py-4 text-end font-mono" onDoubleClick={() => startInlineEdit(medicine, "costPrice")}>
@@ -380,6 +503,153 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ─── First-Scan Barcode Binding Modal ──────────────────────── */}
+      {showBindingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={() => setShowBindingModal(false)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-xl m-4 overflow-hidden animate-fade-in-up border border-slate-200 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-indigo-50/50 dark:bg-indigo-950/30 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Link2 className="w-5 h-5 text-indigo-600" />
+                الربط عند أول مسح (First-Scan Binding)
+              </h2>
+              <button onClick={() => setShowBindingModal(false)} className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleLinkSubmit} className="p-6 space-y-5">
+              {/* Barcode Display or Input */}
+              <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 rounded-xl space-y-2">
+                <label className="text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4" />
+                  الباركود الممسوح بجهاز القارئ المادي:
+                </label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="امسح الباركود بجهاز القارئ..."
+                  value={unlinkedBarcode}
+                  onChange={(e) => setUnlinkedBarcode(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg font-mono text-base font-bold text-indigo-900 dark:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  autoFocus
+                />
+              </div>
+
+              {/* Autocomplete Search Bar for existing local medicines */}
+              <div className="space-y-2">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  ابحث عن الدواء المسجل بالصيدلية لربطه: <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="اكتب اسم الدواء التجاري أو العلمي..."
+                    value={linkSearchTerm}
+                    onChange={(e) => {
+                      setLinkSearchTerm(e.target.value);
+                      setSelectedMedicineForLink(null);
+                    }}
+                    className="input-field w-full"
+                  />
+                  
+                  {/* Results Dropdown */}
+                  {!selectedMedicineForLink && filteredLocalMedicines.length > 0 && (
+                    <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredLocalMedicines.map((med) => (
+                        <div
+                          key={med.id}
+                          onClick={() => {
+                            setSelectedMedicineForLink(med);
+                            setLinkSearchTerm(med.tradeName);
+                          }}
+                          className="p-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer flex justify-between items-center transition-colors"
+                        >
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white text-sm">{med.tradeName}</div>
+                            <div className="text-xs text-slate-400">{med.scientificName || med.genericName || "غير محدد"}</div>
+                          </div>
+                          <div className="text-xs font-mono text-slate-500">
+                            {med.barcode ? `باركود: ${med.barcode}` : "بدون باركود"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Selected Medicine Confirmation Card */}
+              {selectedMedicineForLink && (
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/80 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold">الدواء المحدد للربط:</div>
+                    <div className="font-bold text-slate-900 dark:text-white text-base">{selectedMedicineForLink.tradeName}</div>
+                    <div className="text-xs text-slate-500">{selectedMedicineForLink.scientificName || selectedMedicineForLink.genericName || "-"}</div>
+                  </div>
+                  <div className="text-end">
+                    <span className="inline-block px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-bold rounded-lg text-xs">
+                      المخزون الحالي: {selectedMedicineForLink.stock || 0}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Batch Intake Fields */}
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    الكمية المضافة (Batch Quantity) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={linkQuantity}
+                    onChange={(e) => setLinkQuantity(e.target.value)}
+                    className="input-field w-full font-mono text-center"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    تاريخ الصلاحية (Expiry Date) *
+                  </label>
+                  <input
+                    type="date"
+                    value={linkExpiryDate}
+                    onChange={(e) => setLinkExpiryDate(e.target.value)}
+                    className="input-field w-full"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Primary Action Button */}
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setShowBindingModal(false)}
+                  className="btn-ghost"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={!selectedMedicineForLink || !unlinkedBarcode.trim() || linkingSubmitting}
+                  className="btn-primary !bg-indigo-600 hover:!bg-indigo-700 disabled:opacity-50 shadow-lg shadow-indigo-500/25 flex items-center gap-2 px-6 py-2.5"
+                >
+                  {linkingSubmitting ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Link2 className="w-4 h-4" />
+                  )}
+                  <span>ربط الباركود وإضافة المخزون</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={() => setShowModal(false)}>
@@ -450,17 +720,7 @@ export default function InventoryPage() {
                       </div>
                       <div>
                         <label className="input-label">الباركود</label>
-                        <div className="flex gap-2">
-                          <input className="input-field flex-1" dir="ltr" {...register("barcode")} />
-                          <button 
-                            type="button"
-                            onClick={() => setShowScanner(true)}
-                            className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400 p-2.5 rounded-lg flex items-center justify-center hover:bg-emerald-200 dark:hover:bg-emerald-800 transition-colors shrink-0"
-                            title="مسح بالكاميرا"
-                          >
-                            <Camera className="w-5 h-5" />
-                          </button>
-                        </div>
+                        <input className="input-field" dir="ltr" placeholder="امسح الباركود بالجهاز..." {...register("barcode")} />
                       </div>
                     </div>
                   </div>
@@ -522,17 +782,6 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Camera Scanner Modal */}
-      {showScanner && (
-        <CameraScanner 
-          onClose={() => setShowScanner(false)}
-          onScan={(barcode) => {
-            setValue("barcode", barcode, { shouldValidate: true });
-            toast.success("تم التقاط الباركود بنجاح!");
-          }}
-        />
       )}
     </div>
   );

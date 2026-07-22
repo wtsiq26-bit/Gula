@@ -48,6 +48,7 @@ const createSale = async (req, res) => {
           const initialBatch = await tx.batch.create({
             data: {
               medicineId: medicine.id,
+              pharmacyId,
               quantity: medicine.stock,
               expiryDate: medicine.expiryDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
             },
@@ -158,6 +159,7 @@ const createSale = async (req, res) => {
               medicineId,
               quantity,
               unitPrice,
+              pharmacyId,
             })),
           },
         },

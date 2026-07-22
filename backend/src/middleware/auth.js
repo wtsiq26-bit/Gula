@@ -31,6 +31,8 @@ const protect = (req, res, next) => {
       userId: decoded.userId,
       pharmacyId: decoded.pharmacyId,
       role: decoded.role,
+      name: decoded.name,
+      location: decoded.location,
     };
 
     next();

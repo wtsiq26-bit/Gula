@@ -10,12 +10,14 @@ const jwt = require("jsonwebtoken");
 const prisma = require("../config/db");
 
 // ─── Helper: Generate JWT ────────────────────────────────────
-const generateToken = (user) => {
+const generateToken = (user, pharmacy) => {
   return jwt.sign(
     {
       userId: user.id,
-      pharmacyId: user.pharmacyId,
+      pharmacyId: user.pharmacyId || user.pharmacy?.id,
       role: user.role,
+      name: pharmacy?.name || user.pharmacy?.name,
+      location: pharmacy?.location || user.pharmacy?.location,
     },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
@@ -96,7 +98,7 @@ const registerPharmacy = async (req, res) => {
     });
 
     // ── Generate JWT ──────────────────────────────────────────
-    const token = generateToken(result.user);
+    const token = generateToken(result.user, result.pharmacy);
 
     // ── Response ──────────────────────────────────────────────
     return res.status(201).json({
@@ -109,6 +111,9 @@ const registerPharmacy = async (req, res) => {
           username: result.user.username,
           email: result.user.email,
           role: result.user.role,
+          pharmacyId: result.pharmacy.id,
+          name: result.pharmacy.name,
+          location: result.pharmacy.location,
         },
         pharmacy: {
           id: result.pharmacy.id,
@@ -174,7 +179,7 @@ const login = async (req, res) => {
     }
 
     // ── Generate JWT ──────────────────────────────────────────
-    const token = generateToken(user);
+    const token = generateToken(user, user.pharmacy);
 
     // ── Response ──────────────────────────────────────────────
     return res.status(200).json({
@@ -187,8 +192,15 @@ const login = async (req, res) => {
           username: user.username,
           email: user.email,
           role: user.role,
+          pharmacyId: user.pharmacyId,
+          name: user.pharmacy?.name,
+          location: user.pharmacy?.location,
         },
-        pharmacy: user.pharmacy,
+        pharmacy: user.pharmacy ? {
+          id: user.pharmacy.id,
+          name: user.pharmacy.name,
+          location: user.pharmacy.location,
+        } : null,
       },
     });
   } catch (error) {
@@ -213,6 +225,7 @@ const getMe = async (req, res) => {
         username: true,
         email: true,
         role: true,
+        pharmacyId: true,
         pharmacy: {
           select: {
             id: true,
@@ -232,7 +245,16 @@ const getMe = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: user,
+      data: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        pharmacyId: user.pharmacyId,
+        name: user.pharmacy?.name,
+        location: user.pharmacy?.location,
+        pharmacy: user.pharmacy,
+      },
     });
   } catch (error) {
     console.error("[Auth] GetMe error:", error);

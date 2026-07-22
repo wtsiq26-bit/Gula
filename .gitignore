@@ -119,5 +119,9 @@ dist
 *.db
 *.db-journal
 
-# Uploads
+# Large Data & Uploads
 backend/uploads/
+drugs.json
+data/
+backend/data/
+

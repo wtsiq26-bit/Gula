@@ -18,13 +18,45 @@ import {
   Bell
 } from "lucide-react";
 
-export default function Sidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: boolean, setIsCollapsed: (val: boolean) => void }) {
+import { useEffect, useState } from "react";
+
+interface SidebarProps {
+  isCollapsed: boolean;
+  setIsCollapsed: (val: boolean) => void;
+  currentUser?: { name?: string; location?: string; username?: string } | null;
+}
+
+export default function Sidebar({ isCollapsed, setIsCollapsed, currentUser }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const [pharmacyName, setPharmacyName] = useState<string>("صيدليتي");
+  const [location, setLocation] = useState<string>("");
+
+  useEffect(() => {
+    if (currentUser?.name) {
+      setPharmacyName(currentUser.name);
+      setLocation(currentUser.location || "");
+    } else {
+      let savedPharmacy: any = {};
+      let savedUser: any = {};
+      try {
+        const rawP = localStorage.getItem("gula_pharmacy");
+        if (rawP && rawP !== "undefined") savedPharmacy = JSON.parse(rawP);
+        const rawU = localStorage.getItem("gula_user");
+        if (rawU && rawU !== "undefined") savedUser = JSON.parse(rawU);
+      } catch (e) {}
+      const name = savedPharmacy.name || savedUser.name || "صيدليتي";
+      const loc = savedPharmacy.location || savedUser.location || "";
+      setPharmacyName(name);
+      setLocation(loc);
+    }
+  }, [currentUser]);
 
   const handleLogout = () => {
     localStorage.removeItem("gula_token");
+    localStorage.removeItem("gula_user");
+    localStorage.removeItem("gula_pharmacy");
     router.replace("/login");
   };
 
@@ -52,9 +84,13 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: { isCollapsed: 
             <img src="/logo.png" alt="Gula" className="w-6 h-6 invert brightness-0" />
           </div>
           {!isCollapsed && (
-            <div className="flex flex-col whitespace-nowrap">
-              <span className="font-bold text-lg leading-tight text-slate-900 dark:text-white">صيدلية النور</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">نظام إدارة الصيدليات</span>
+            <div className="flex flex-col whitespace-nowrap overflow-hidden max-w-[150px]">
+              <span className="font-bold text-lg leading-tight text-slate-900 dark:text-white truncate" title={pharmacyName}>
+                {pharmacyName}
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                {location ? location : "نظام إدارة الصيدليات"}
+              </span>
             </div>
           )}
         </div>

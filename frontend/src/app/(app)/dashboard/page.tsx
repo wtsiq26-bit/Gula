@@ -26,8 +26,21 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [expiryAlerts, setExpiryAlerts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
+    let savedUser: any = {};
+    let savedPharmacy: any = {};
+    try {
+      const rawU = localStorage.getItem("gula_user");
+      if (rawU && rawU !== "undefined") savedUser = JSON.parse(rawU);
+      const rawP = localStorage.getItem("gula_pharmacy");
+      if (rawP && rawP !== "undefined") savedPharmacy = JSON.parse(rawP);
+    } catch (e) {}
+    setCurrentUser({
+      name: savedPharmacy.name || savedUser.name || "",
+      location: savedPharmacy.location || savedUser.location || "",
+    });
     fetchDashboardData();
   }, []);
 
@@ -69,9 +82,11 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <TrendingUp className="w-6 h-6 text-emerald-600" />
-          لوحة التحكم
+          لوحة التحكم {currentUser?.name ? `— ${currentUser.name}` : ""}
         </h1>
-        <p className="text-sm text-slate-500 mt-1">نظرة عامة على عمليات ونشاطات صيدليتك</p>
+        <p className="text-sm text-slate-500 mt-1">
+          نظرة عامة على عمليات ونشاطات صيدليتك {currentUser?.location ? `(${currentUser.location})` : ""}
+        </p>
       </div>
 
       {/* ── KPI Cards Row 1: Sales ─────────────────────────────── */}

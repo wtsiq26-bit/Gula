@@ -47,14 +47,9 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
   const initRef = useRef(false);
 
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
     let html5QrCode: Html5Qrcode;
     let isScanning = false;
     let isMounted = true;
-
-    html5QrCode = new Html5Qrcode("reader");
 
     const startScanner = async () => {
       try {
@@ -63,12 +58,23 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
           throw new Error("لم يتم العثور على كاميرا في هذا الجهاز.");
         }
         
-        // Try to prefer a back camera if available (useful for phones/tablets)
         const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
         const cameraId = backCamera ? backCamera.id : devices[0].id;
 
-        // Import the formats Enum
         const { Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+
+        html5QrCode = new Html5Qrcode("reader", {
+          verbose: false,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.QR_CODE
+          ]
+        });
 
         html5QrCode.start(
           cameraId,
@@ -78,16 +84,7 @@ export default function CameraScanner({ onScan, onClose }: CameraScannerProps) {
             videoConstraints: {
               width: { ideal: 1280 },
               height: { ideal: 720 }
-            },
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.EAN_8,
-              Html5QrcodeSupportedFormats.UPC_A,
-              Html5QrcodeSupportedFormats.UPC_E,
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.CODE_39,
-              Html5QrcodeSupportedFormats.QR_CODE
-            ]
+            }
           },
           (decodedText) => {
             if (isMounted) {

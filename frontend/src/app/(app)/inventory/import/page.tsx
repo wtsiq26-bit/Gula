@@ -26,7 +26,11 @@ export default function ImportMedicinesPage() {
     setLoading(true);
     setResult(null);
 
-    const user = JSON.parse(localStorage.getItem("gula_user") || "{}");
+    let user: any = {};
+    try {
+      const rawUser = localStorage.getItem("gula_user");
+      if (rawUser && rawUser !== "undefined") user = JSON.parse(rawUser);
+    } catch (e) {}
     const token = localStorage.getItem("gula_token");
 
     const formData = new FormData();

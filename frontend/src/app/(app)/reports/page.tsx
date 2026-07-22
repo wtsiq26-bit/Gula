@@ -11,7 +11,6 @@ import {
   CalendarDays, 
   FileDown, 
   Receipt, 
-  BuildingStore,
   RefreshCw
 } from "lucide-react";
 import { useReactToPrint } from "react-to-print";
@@ -27,6 +26,22 @@ export default function ReportsPage() {
   });
 
   const printRef = useRef<HTMLDivElement>(null);
+  const [pharmacyInfo, setPharmacyInfo] = useState<{ name: string; location: string }>({ name: "", location: "" });
+
+  useEffect(() => {
+    let savedPharmacy: any = {};
+    let savedUser: any = {};
+    try {
+      const rawP = localStorage.getItem("gula_pharmacy");
+      if (rawP && rawP !== "undefined") savedPharmacy = JSON.parse(rawP);
+      const rawU = localStorage.getItem("gula_user");
+      if (rawU && rawU !== "undefined") savedUser = JSON.parse(rawU);
+    } catch (e) {}
+    setPharmacyInfo({
+      name: savedPharmacy.name || savedUser.name || "Gula",
+      location: savedPharmacy.location || savedUser.location || "",
+    });
+  }, []);
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -253,8 +268,12 @@ export default function ReportsPage() {
           {/* Official Document Header */}
           <div className="flex items-center justify-between border-b-2 border-emerald-600 pb-4 mb-6">
             <div>
-              <h1 className="text-2xl font-black text-slate-900 mb-1">تقرير مبيعات وأرباح صيدلية Gula</h1>
-              <p className="text-xs text-slate-500">تقرير مالي رسمي معتمد لإدارة الصيدلية وقسم المحاسبة</p>
+              <h1 className="text-2xl font-black text-slate-900 mb-1">
+                تقرير مبيعات وأرباح {pharmacyInfo.name ? `صيدلية ${pharmacyInfo.name}` : "الصيدلية"}
+              </h1>
+              <p className="text-xs text-slate-500">
+                تقرير مالي رسمي معتمد لإدارة الصيدلية وقسم المحاسبة {pharmacyInfo.location ? `(${pharmacyInfo.location})` : ""}
+              </p>
             </div>
             <div className="text-left font-mono text-xs text-slate-600">
               <div>تاريخ التقرير: {new Date().toLocaleDateString("ar-IQ")}</div>

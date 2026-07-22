@@ -1,35 +1,30 @@
-// Gula PMS - FEFO Checkout & Sales API Route Handler
+// Gula PMS - Multi-Tenant FEFO Checkout & Sales API Route Handler (Updated)
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/getAuthSession";
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getAuthSession(request);
+    if (!session?.pharmacyId) {
+      return NextResponse.json(
+        { success: false, message: "غير مصرح بالإجراء." },
+        { status: 401 }
+      );
+    }
+
+    // CRITICAL: Extract pharmacyId and userId securely from session token - NEVER trust client body!
+    const currentPharmacyId = session.pharmacyId;
+    const activeUserId = session.userId;
+
     const body = await request.json();
-    const { items, paymentMethod = "CASH", userId, pharmacyId } = body;
+    const { items, paymentMethod = "CASH" } = body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
         { success: false, message: "يجب أن تحتوي الفاتورة على دواء واحد على الأقل." },
         { status: 400 }
       );
-    }
-
-    // Resolve user & pharmacy fallback if not passed directly
-    let activePharmacyId = pharmacyId;
-    let activeUserId = userId;
-
-    if (!activePharmacyId || !activeUserId) {
-      const defaultUser = await prisma.user.findFirst({
-        include: { pharmacy: true },
-      });
-      if (!defaultUser) {
-        return NextResponse.json(
-          { success: false, message: "لم يتم العثور على مستخدم أو صيدلية مسجلة." },
-          { status: 400 }
-        );
-      }
-      activePharmacyId = activePharmacyId || defaultUser.pharmacyId;
-      activeUserId = activeUserId || defaultUser.id;
     }
 
     // Wrap entire FEFO checkout loop in a Prisma Transaction for absolute integrity
@@ -46,16 +41,19 @@ export async function POST(request: NextRequest) {
         }
 
         const medicine = await tx.medicine.findFirst({
-          where: { id: medicineId, pharmacyId: activePharmacyId },
+          where: {
+            id: medicineId,
+            OR: [{ pharmacyId: currentPharmacyId }, { isGlobal: true }],
+          },
         });
 
         if (!medicine) {
-          throw new Error("الدواء المحدد غير موجود بالمخزون.");
+          throw new Error("الدواء المحدد غير موجود بالمخزون لهذه الصيدلية.");
         }
 
-        // a. Fetch all Batch records for medicine where quantity > 0, ordered by expiryDate ASC
+        // a. Fetch all Batch records for medicine scoped to pharmacyId where quantity > 0, ordered by expiryDate ASC
         let batches = await tx.batch.findMany({
-          where: { medicineId, quantity: { gt: 0 } },
+          where: { medicineId, pharmacyId: currentPharmacyId, quantity: { gt: 0 } },
           orderBy: { expiryDate: "asc" },
         });
 
@@ -65,6 +63,7 @@ export async function POST(request: NextRequest) {
           const initialBatch = await tx.batch.create({
             data: {
               medicineId: medicine.id,
+              pharmacyId: currentPharmacyId,
               quantity: medicine.stock,
               expiryDate: medicine.expiryDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
             },
@@ -106,13 +105,13 @@ export async function POST(request: NextRequest) {
 
         // c. Update parent Medicine.totalStock and stock
         const totalRemaining = await tx.batch.aggregate({
-          where: { medicineId: medicine.id },
+          where: { medicineId: medicine.id, pharmacyId: currentPharmacyId },
           _sum: { quantity: true },
         });
         const updatedTotalStock = totalRemaining._sum.quantity || 0;
 
         const nextExpiringBatch = await tx.batch.findFirst({
-          where: { medicineId: medicine.id, quantity: { gt: 0 } },
+          where: { medicineId: medicine.id, pharmacyId: currentPharmacyId, quantity: { gt: 0 } },
           orderBy: { expiryDate: "asc" },
         });
 
@@ -132,12 +131,13 @@ export async function POST(request: NextRequest) {
           medicineId,
           quantity: reqQty,
           unitPrice: medicine.sellingPrice,
+          pharmacyId: currentPharmacyId,
         });
       }
 
-      // Generate invoice number sequentially
+      // Generate invoice number sequentially per pharmacy
       const lastSale = await tx.sale.findFirst({
-        where: { pharmacyId: activePharmacyId, invoiceNumber: { startsWith: "INV-" } },
+        where: { pharmacyId: currentPharmacyId, invoiceNumber: { startsWith: "INV-" } },
         orderBy: { createdAt: "desc" },
       });
 
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
           totalAmount,
           paymentMethod,
           userId: activeUserId,
-          pharmacyId: activePharmacyId,
+          pharmacyId: currentPharmacyId,
           items: {
             create: saleItemsToCreate,
           },

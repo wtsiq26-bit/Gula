@@ -37,9 +37,20 @@ export default function LoginPage() {
         password: formData.password,
       });
 
+      const userPayload = {
+        ...response.data.user,
+        name: response.data.pharmacy?.name || response.data.user?.name,
+        location: response.data.pharmacy?.location || response.data.user?.location,
+      };
+      const pharmacyPayload = response.data.pharmacy || {
+        id: response.data.user?.pharmacyId,
+        name: userPayload.name,
+        location: userPayload.location,
+      };
+
       localStorage.setItem("gula_token", response.data.token);
-      localStorage.setItem("gula_user", JSON.stringify(response.data.user));
-      localStorage.setItem("gula_pharmacy", JSON.stringify(response.data.pharmacy));
+      localStorage.setItem("gula_user", JSON.stringify(userPayload));
+      localStorage.setItem("gula_pharmacy", JSON.stringify(pharmacyPayload));
 
       toast.success(`مرحباً بك مجدداً، ${response.data.user.username}!`);
       router.push("/dashboard");

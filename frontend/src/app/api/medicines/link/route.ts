@@ -1,9 +1,16 @@
-// Gula PMS - Medicine Stock Link & Batch Intake Route Handler (FEFO)
+// Gula PMS - First-Scan Barcode Binding & Batch Intake API Route Handler
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/getAuthSession";
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getAuthSession(request);
+    if (!session?.pharmacyId) {
+      return NextResponse.json({ success: false, message: "غير مصرح بالوصول." }, { status: 401 });
+    }
+    const currentPharmacyId = session.pharmacyId;
+
     const body = await request.json();
     const { medicineId, barcode, quantity, expiryDate } = body;
 
@@ -30,47 +37,69 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resolve medicine by ID or barcode
+    // Resolve medicine strictly by ID or barcode belonging to currentPharmacyId (or global catalog)
     let medicine = null;
     if (medicineId) {
-      medicine = await prisma.medicine.findUnique({ where: { id: medicineId } });
+      medicine = await prisma.medicine.findFirst({
+        where: { id: medicineId, OR: [{ pharmacyId: currentPharmacyId }, { isGlobal: true }] },
+      });
     } else if (barcode) {
-      medicine = await prisma.medicine.findUnique({ where: { barcode } });
+      medicine = await prisma.medicine.findFirst({
+        where: { barcode, OR: [{ pharmacyId: currentPharmacyId }, { isGlobal: true }] },
+      });
     }
 
     if (!medicine) {
       return NextResponse.json(
-        { success: false, message: "لم يتم العثور على الدواء المحدد." },
+        { success: false, message: "لم يتم العثور على الدواء المحدد في صيدليتك." },
         { status: 404 }
       );
     }
 
-    // Wrap batch creation and stock recalculation in a Prisma Transaction
+    // Check if new barcode is already assigned to a DIFFERENT medicine in the same tenant
+    if (barcode && barcode !== medicine.barcode) {
+      const duplicateBarcode = await prisma.medicine.findFirst({
+        where: {
+          barcode,
+          pharmacyId: currentPharmacyId,
+          NOT: { id: medicine.id },
+        },
+      });
+
+      if (duplicateBarcode) {
+        return NextResponse.json(
+          { success: false, message: `الباركود (${barcode}) مرتبط بالفعل بدواء آخر (${duplicateBarcode.tradeName}) في صيدليتك.` },
+          { status: 409 }
+        );
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create a new Batch record
+      // 1. Create a new Batch record attached to currentPharmacyId
       const batch = await tx.batch.create({
         data: {
           medicineId: medicine.id,
+          pharmacyId: currentPharmacyId,
           quantity: parsedQuantity,
           expiryDate: parsedExpiry,
         },
       });
 
-      // 2. Aggregate all active batch quantities for this medicine
+      // 2. Aggregate all active batch quantities for this medicine in this pharmacy
       const aggregation = await tx.batch.aggregate({
-        where: { medicineId: medicine.id },
+        where: { medicineId: medicine.id, pharmacyId: currentPharmacyId },
         _sum: { quantity: true },
       });
 
       const totalStock = aggregation._sum.quantity || 0;
 
-      // 3. Find the earliest active batch expiry date to update Medicine.expiryDate
+      // 3. Find the earliest active batch expiry date (FEFO)
       const earliestBatch = await tx.batch.findFirst({
-        where: { medicineId: medicine.id, quantity: { gt: 0 } },
+        where: { medicineId: medicine.id, pharmacyId: currentPharmacyId, quantity: { gt: 0 } },
         orderBy: { expiryDate: "asc" },
       });
 
-      // 4. Update totalStock and stock cache on parent Medicine
+      // 4. Update totalStock, stock cache, and save barcode binding to Medicine
       const updatedMedicine = await tx.medicine.update({
         where: { id: medicine.id },
         data: {
@@ -86,13 +115,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `تم إضافة شحنة جديدة بكمية ${parsedQuantity} بنجاح للوجبة.`,
+      message: `تم ربط الباركود وإضافة شحنة جديدة بكمية ${parsedQuantity} بنجاح.`,
       data: result,
     });
   } catch (error: any) {
     console.error("[Medicines Link API Error]:", error);
     return NextResponse.json(
-      { success: false, message: error.message || "حدث خطأ أثناء إضافة الشحنة المخزنية." },
+      { success: false, message: error.message || "حدث خطأ أثناء ربط الباركود وإضافة الشحنة." },
       { status: 500 }
     );
   }
